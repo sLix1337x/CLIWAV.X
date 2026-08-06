@@ -1,5 +1,7 @@
 # CLIWAV.X
-CLIWAVEX-LOGO.png
+
+<img width="1254" height="1254" alt="CLIWAVEX-LOGO" src="https://github.com/user-attachments/assets/9d426c9c-2841-4c1b-9327-c9f5e73d90e7" />
+
 A low-overhead CLI music player for Windows 11. Play local files, YouTube, SoundCloud, and use Spotify for track discovery. Designed to stay out of the way while gaming.
 
 ## Why not just use a browser?
