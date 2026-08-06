@@ -38,6 +38,11 @@ pub const SOUNDCLOUD_GENRES: [&str; 7] = [
     "Pop",
 ];
 
+/// Synthetic playlist id injected at the front of the Library playlist list
+/// so "Saved Tracks" persists across sessions without being a real playlist.
+pub const SAVED_TRACKS_PLAYLIST_ID: i64 = -1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
     Dashboard,
     Search,
@@ -196,6 +201,15 @@ pub struct App {
     pub search_loading: bool,
     search_handle: Option<tokio::task::JoinHandle<(Vec<UnifiedTrack>, Option<String>, Option<String>)>>,
 
+    pub dashboard_sc_category_selected: usize,
+    pub dashboard_sc_search: bool,
+    pub dashboard_sc_query: String,
+    pub dashboard_sc_results: Vec<UnifiedTrack>,
+    pub dashboard_sc_selected: usize,
+    pub dashboard_sc_search_focus: SearchFocus,
+    pub dashboard_sc_search_loading: bool,
+    dashboard_sc_search_handle: Option<tokio::task::JoinHandle<Result<Vec<UnifiedTrack>>>>,
+
     pub soundcloud_username: String,
     pub soundcloud_pane: SoundCloudPane,
     pub soundcloud_category_selected: usize,
@@ -345,6 +359,14 @@ impl App {
             search_focus: SearchFocus::Input,
             search_loading: false,
             search_handle: None,
+            dashboard_sc_category_selected: 0,
+            dashboard_sc_search: false,
+            dashboard_sc_query: String::new(),
+            dashboard_sc_results: Vec::new(),
+            dashboard_sc_selected: 0,
+            dashboard_sc_search_focus: SearchFocus::Input,
+            dashboard_sc_search_loading: false,
+            dashboard_sc_search_handle: None,
             soundcloud_username,
             soundcloud_pane: SoundCloudPane::Categories,
             soundcloud_category_selected: 0,
@@ -433,7 +455,15 @@ impl App {
     }
 
     pub fn load_playlists(&mut self) -> Result<()> {
-        self.playlists = self.db.list_playlists()?;
+        let mut playlists = self.db.list_playlists()?;
+        playlists.insert(
+            0,
+            Playlist {
+                id: SAVED_TRACKS_PLAYLIST_ID,
+                name: "Saved Tracks".to_string(),
+            },
+        );
+        self.playlists = playlists;
         if self.selected_playlist >= self.playlists.len() && !self.playlists.is_empty() {
             self.selected_playlist = self.playlists.len() - 1;
         }
@@ -445,7 +475,11 @@ impl App {
         self.playlist_tracks.clear();
         self.selected_playlist_track = 0;
         if let Some(playlist) = self.playlists.get(self.selected_playlist) {
-            self.playlist_tracks = self.db.get_playlist_tracks(playlist.id)?;
+            if playlist.id == SAVED_TRACKS_PLAYLIST_ID {
+                self.playlist_tracks = self.db.list_saved_tracks()?;
+            } else {
+                self.playlist_tracks = self.db.get_playlist_tracks(playlist.id)?;
+            }
         }
         Ok(())
     }
@@ -453,6 +487,10 @@ impl App {
     pub fn create_playlist(&mut self, name: &str) -> Result<()> {
         if name.trim().is_empty() {
             self.status_message = "Playlist name cannot be empty.".to_string();
+            return Ok(());
+        }
+        if name.trim().eq_ignore_ascii_case("Saved Tracks") {
+            self.status_message = "'Saved Tracks' is reserved.".to_string();
             return Ok(());
         }
         self.db.create_playlist(name.trim())?;
@@ -463,6 +501,9 @@ impl App {
 
     pub fn delete_selected_playlist(&mut self) -> Result<()> {
         if let Some(playlist) = self.playlists.get(self.selected_playlist).cloned() {
+            if playlist.id == SAVED_TRACKS_PLAYLIST_ID {
+                return Ok(());
+            }
             // Capture for Ctrl+Z before destroying anything.
             let tracks = self.db.get_playlist_tracks(playlist.id).unwrap_or_default();
             self.last_deleted_playlist = Some((playlist.name.clone(), tracks));
@@ -471,6 +512,70 @@ impl App {
             self.status_message =
                 format!("Deleted playlist '{}' (Ctrl+Z to undo).", playlist.name);
         }
+        Ok(())
+    }
+
+    pub fn selected_playlist_is_saved_tracks(&self) -> bool {
+        self.playlists
+            .get(self.selected_playlist)
+            .is_some_and(|p| p.id == SAVED_TRACKS_PLAYLIST_ID)
+    }
+
+    /// Return the currently-selected track from whichever tab/pane has focus.
+    /// Used by global shortcuts like 's' so they act on the visible selection
+    /// without every call site duplicating the focus logic.
+    pub fn selected_track(&self) -> Option<&UnifiedTrack> {
+        match self.current_tab {
+            Tab::Dashboard => match self.dashboard_pane {
+                DashboardPane::SoundCloud if self.dashboard_sc_search => {
+                    self.dashboard_sc_results.get(self.dashboard_sc_selected)
+                }
+                DashboardPane::SoundCloud => {
+                    self.soundcloud_user_tracks.get(self.soundcloud_track_selected)
+                }
+                DashboardPane::Queue => self.queue.get(self.queue_selected),
+            },
+            Tab::Search => self.search_results.get(self.search_selected),
+            Tab::Queue => self.queue.get(self.queue_selected),
+            Tab::Library if self.library_pane == LibraryPane::Tracks => {
+                self.playlist_tracks.get(self.selected_playlist_track)
+            }
+            Tab::SoundCloud if self.soundcloud_pane == SoundCloudPane::Tracks => {
+                self.soundcloud_user_tracks.get(self.soundcloud_track_selected)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn save_selected_track_to_library(&mut self) -> Result<()> {
+        let Some(track) = self.selected_track().cloned() else {
+            self.status_message = "Nothing selected to save.".to_string();
+            return Ok(());
+        };
+        self.db.save_track(&track)?;
+        if self.current_tab == Tab::Library
+            && self.library_pane == LibraryPane::Tracks
+            && self.selected_playlist_is_saved_tracks()
+        {
+            self.load_selected_playlist_tracks()?;
+        }
+        self.status_message = format!("Saved '{}' to library.", track.title);
+        Ok(())
+    }
+
+    pub fn remove_selected_saved_track(&mut self) -> Result<()> {
+        if self.current_tab != Tab::Library
+            || self.library_pane != LibraryPane::Tracks
+            || !self.selected_playlist_is_saved_tracks()
+        {
+            return Ok(());
+        }
+        let Some(track) = self.selected_track().cloned() else {
+            return Ok(());
+        };
+        self.db.delete_saved_track(&track.playable_url)?;
+        self.load_selected_playlist_tracks()?;
+        self.status_message = format!("Removed '{}' from saved tracks.", track.title);
         Ok(())
     }
 
@@ -625,7 +730,12 @@ impl App {
         match self.current_tab {
             Tab::Dashboard => match self.dashboard_pane {
                 DashboardPane::SoundCloud => {
-                    if !self.soundcloud_user_tracks.is_empty() {
+                    if self.dashboard_sc_search {
+                        if !self.dashboard_sc_results.is_empty() {
+                            self.dashboard_sc_selected =
+                                (self.dashboard_sc_selected + 1) % self.dashboard_sc_results.len();
+                        }
+                    } else if !self.soundcloud_user_tracks.is_empty() {
                         self.soundcloud_track_selected = (self.soundcloud_track_selected + 1)
                             % self.soundcloud_user_tracks.len();
                     }
@@ -681,7 +791,13 @@ impl App {
         match self.current_tab {
             Tab::Dashboard => match self.dashboard_pane {
                 DashboardPane::SoundCloud => {
-                    if !self.soundcloud_user_tracks.is_empty() {
+                    if self.dashboard_sc_search {
+                        if !self.dashboard_sc_results.is_empty() {
+                            let len = self.dashboard_sc_results.len();
+                            self.dashboard_sc_selected =
+                                (self.dashboard_sc_selected + len - 1) % len;
+                        }
+                    } else if !self.soundcloud_user_tracks.is_empty() {
                         let len = self.soundcloud_user_tracks.len();
                         self.soundcloud_track_selected =
                             (self.soundcloud_track_selected + len - 1) % len;
@@ -759,7 +875,17 @@ impl App {
         match self.current_tab {
             Tab::Dashboard => match self.dashboard_pane {
                 DashboardPane::SoundCloud => {
-                    if self.soundcloud_user_tracks.is_empty() {
+                    if self.dashboard_sc_search {
+                        if let Some(track) = self
+                            .dashboard_sc_results
+                            .get(self.dashboard_sc_selected)
+                            .cloned()
+                        {
+                            self.playback_origin =
+                                Some((PlaybackOrigin::SoundCloud, self.dashboard_sc_selected));
+                            self.play_track(&track, true).await?;
+                        }
+                    } else if self.soundcloud_user_tracks.is_empty() {
                         self.load_selected_soundcloud_category()?;
                     } else if let Some(track) = self
                         .soundcloud_user_tracks
@@ -828,6 +954,10 @@ impl App {
     pub async fn add_selected_to_queue(&mut self) -> Result<()> {
         let track = match self.current_tab {
             Tab::Dashboard => match self.dashboard_pane {
+                DashboardPane::SoundCloud if self.dashboard_sc_search => self
+                    .dashboard_sc_results
+                    .get(self.dashboard_sc_selected)
+                    .cloned(),
                 DashboardPane::SoundCloud => self
                     .soundcloud_user_tracks
                     .get(self.soundcloud_track_selected)
@@ -1280,7 +1410,7 @@ impl App {
 
     /// Dashboard Left/Right: switch the SoundCloud category (or genre bucket
     /// when no username is configured) and reload it.
-    pub fn cycle_soundcloud_category(&mut self, forward: bool) {
+    pub fn cycle_dashboard_soundcloud_mode(&mut self, forward: bool) {
         if self.soundcloud_username.is_empty() {
             let len = SOUNDCLOUD_GENRES.len();
             self.soundcloud_genre_selected = if forward {
@@ -1288,16 +1418,84 @@ impl App {
             } else {
                 (self.soundcloud_genre_selected + len - 1) % len
             };
+            self.dashboard_sc_search = false;
             self.load_selected_genre();
             return;
         }
-        let len = SoundCloudCategory::ALL.len();
-        self.soundcloud_category_selected = if forward {
-            (self.soundcloud_category_selected + 1) % len
+        let len = 4; // Tracks, Likes, Reposts, Search
+        self.dashboard_sc_category_selected = if forward {
+            (self.dashboard_sc_category_selected + 1) % len
         } else {
-            (self.soundcloud_category_selected + len - 1) % len
+            (self.dashboard_sc_category_selected + len - 1) % len
         };
+        if self.dashboard_sc_category_selected == 3 {
+            self.dashboard_sc_search = true;
+            self.dashboard_sc_search_focus = SearchFocus::Input;
+            self.abort_dashboard_sc_search();
+            self.status_message =
+                "SoundCloud search mode. Type a query and press Enter.".to_string();
+            return;
+        }
+        self.dashboard_sc_search = false;
+        self.soundcloud_category_selected = self.dashboard_sc_category_selected;
         let _ = self.load_selected_soundcloud_category();
+    }
+
+    fn abort_dashboard_sc_search(&mut self) {
+        if let Some(handle) = self.dashboard_sc_search_handle.take() {
+            handle.abort();
+        }
+        self.dashboard_sc_search_loading = false;
+    }
+
+    pub fn start_dashboard_sc_search(&mut self) {
+        let query = self.dashboard_sc_query.trim().to_string();
+        if query.is_empty() {
+            self.dashboard_sc_results.clear();
+            self.dashboard_sc_selected = 0;
+            return;
+        }
+        if let Some(handle) = self.dashboard_sc_search_handle.take() {
+            handle.abort();
+        }
+        self.dashboard_sc_results.clear();
+        self.dashboard_sc_selected = 0;
+        self.dashboard_sc_search_loading = true;
+        self.status_message = format!("Searching SoundCloud for '{}'...", query);
+        let yt_dlp_path = self.config.player.yt_dlp_path.clone();
+        let cookies = self.config.player.cookies_from_browser.clone();
+        self.dashboard_sc_search_handle = Some(tokio::task::spawn(async move {
+            SoundCloudSource::new(&yt_dlp_path, &cookies)
+                .search(&query, 20)
+                .await
+        }));
+    }
+
+    pub fn poll_dashboard_sc_search(&mut self) {
+        let Some(handle) = &self.dashboard_sc_search_handle else {
+            return;
+        };
+        if !handle.is_finished() {
+            return;
+        }
+        let handle = self.dashboard_sc_search_handle.take().unwrap();
+        self.dashboard_sc_search_loading = false;
+        match handle.now_or_never().unwrap_or(Ok(Err(ClimusicError::Source(
+            "search task panicked".into(),
+        )))) {
+            Ok(Ok(tracks)) => {
+                let count = tracks.len();
+                self.dashboard_sc_results = tracks;
+                self.status_message = format!("Found {} SoundCloud results.", count);
+                if count > 0 && self.dashboard_sc_search_focus == SearchFocus::Input {
+                    self.dashboard_sc_search_focus = SearchFocus::Results;
+                }
+            }
+            Ok(Err(e)) => {
+                self.status_message = format!("SoundCloud search failed: {}", e.friendly())
+            }
+            Err(_) => self.status_message = "SoundCloud search task panicked.".to_string(),
+        }
     }
 
     /// Abort any in-flight SoundCloud page load and clear autoplay state

@@ -110,6 +110,7 @@ async fn run_event_loop(
             app.poll_scan();
             app.poll_playback().await;
             app.poll_soundcloud_load().await;
+            app.poll_dashboard_sc_search();
             app.poll_search();
             app.poll_artwork();
             app.maybe_save_queue();
@@ -174,6 +175,25 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
         }
     }
 
+    // Same typing-first behavior for the Dashboard SoundCloud search box.
+    if matches!(app.current_tab, Tab::Dashboard)
+        && matches!(app.dashboard_pane, DashboardPane::SoundCloud)
+        && app.dashboard_sc_search
+        && matches!(app.dashboard_sc_search_focus, SearchFocus::Input)
+    {
+        match key.code {
+            KeyCode::Char(c) if !ctrl || key.modifiers.contains(KeyModifiers::ALT) => {
+                app.dashboard_sc_query.push(c);
+                return Ok(false);
+            }
+            KeyCode::Backspace => {
+                app.dashboard_sc_query.pop();
+                return Ok(false);
+            }
+            _ => {}
+        }
+    }
+
     match key.code {
         KeyCode::Char('q') | KeyCode::Char('c') if ctrl => return Ok(true),
         KeyCode::Char('Q') => return Ok(true),
@@ -224,18 +244,18 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
 
-        // Dashboard SoundCloud pane: switch Tracks/Likes/Reposts (reloads).
+        // Dashboard SoundCloud pane: switch Tracks/Likes/Reposts/Search (reloads).
         KeyCode::Left
             if matches!(app.current_tab, Tab::Dashboard)
                 && matches!(app.dashboard_pane, DashboardPane::SoundCloud) =>
         {
-            app.cycle_soundcloud_category(false);
+            app.cycle_dashboard_soundcloud_mode(false);
         }
         KeyCode::Right
             if matches!(app.current_tab, Tab::Dashboard)
                 && matches!(app.dashboard_pane, DashboardPane::SoundCloud) =>
         {
-            app.cycle_soundcloud_category(true);
+            app.cycle_dashboard_soundcloud_mode(true);
         }
 
         KeyCode::Enter
@@ -245,8 +265,17 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
             // (see poll_search) — the UI stays responsive meanwhile.
             app.start_search();
         }
+        KeyCode::Enter
+            if matches!(app.current_tab, Tab::Dashboard)
+                && matches!(app.dashboard_pane, DashboardPane::SoundCloud)
+                && app.dashboard_sc_search
+                && matches!(app.dashboard_sc_search_focus, SearchFocus::Input) =>
+        {
+            app.start_dashboard_sc_search();
+        }
         KeyCode::Enter => run!(app, app.play_selected().await),
         KeyCode::Char('a') => run!(app, app.add_selected_to_queue().await),
+        KeyCode::Char('s') => run!(app, app.save_selected_track_to_library()),
         KeyCode::Char(' ') => run!(app, app.toggle_pause().await),
 
         KeyCode::Char('n') if matches!(app.current_tab, Tab::Library) => {
@@ -276,7 +305,11 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
         }
 
         KeyCode::Char('d') if matches!(app.current_tab, Tab::Library) => {
-            run!(app, app.delete_selected_playlist());
+            if app.selected_playlist_is_saved_tracks() {
+                run!(app, app.remove_selected_saved_track());
+            } else {
+                run!(app, app.delete_selected_playlist());
+            }
         }
 
         KeyCode::Char('S') => {

@@ -296,6 +296,7 @@ fn shuffle_style(on: bool) -> Style {
 pub fn draw_now_playing_line(frame: &mut Frame, app: &App, area: Rect) {
     let (icon, label, state_color) = playback_status(app);
     let bg = accent_bg(app);
+    let accent = accent_color(app);
 
     // The state word ("P L A Y I N G") gets a left-to-right gradient from its
     // state color toward a brightened shade of it — a small headline-grade
@@ -318,16 +319,33 @@ pub fn draw_now_playing_line(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let mut lines = match &app.current_track {
-        Some(track) => vec![
-            state_line(Vec::new()),
-            Line::from(vec![
-                Span::styled(
-                    &track.title,
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        Some(track) => {
+            let progress_pct = if app.playback_dur > 0.0 {
+                ((app.playback_pos / app.playback_dur).clamp(0.0, 1.0) * 100.0) as u8
+            } else {
+                0
+            };
+            let mut progress_spans = gradient_meter_spans(progress_pct, 24, accent);
+            progress_spans.push(Span::styled(
+                format!(
+                    "  {} / {}",
+                    format_time(app.playback_pos),
+                    format_time(app.playback_dur)
                 ),
-                Span::styled(format!("  by {}", track.artist), muted_style()),
-            ]),
-        ],
+                muted_style(),
+            ));
+            vec![
+                state_line(Vec::new()),
+                Line::from(vec![
+                    Span::styled(
+                        &track.title,
+                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(format!("  by {}", track.artist), muted_style()),
+                ]),
+                Line::from(progress_spans),
+            ]
+        }
         None => vec![state_line(vec![Span::styled(
             " — Nothing loaded",
             Style::default().fg(state_color).add_modifier(Modifier::BOLD),

@@ -1,7 +1,7 @@
-use crate::app::{App, LibraryPane};
+use crate::app::{App, LibraryPane, SAVED_TRACKS_PLAYLIST_ID};
 use crate::ui::{accent_color, draw_section, highlight_style, is_now_playing, muted_style, normal_style, source_color, source_glyph, track_name_spans, zebra_style};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
@@ -35,8 +35,13 @@ fn draw_playlists(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, playlist)| {
+            let (glyph, glyph_style) = if playlist.id == SAVED_TRACKS_PLAYLIST_ID {
+                ("♥ ", Style::default().fg(Color::Red))
+            } else {
+                ("▸ ", muted_style())
+            };
             ListItem::new(Line::from(vec![
-                Span::styled("▸ ", muted_style()),
+                Span::styled(glyph, glyph_style),
                 Span::styled(&playlist.name, normal_style()),
             ]))
             .style(zebra_style(i))
@@ -54,9 +59,22 @@ fn draw_playlists(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_tracks(frame: &mut Frame, app: &App, area: Rect) {
     let active = matches!(app.library_pane, LibraryPane::Tracks);
 
+    let saved_tracks_selected = app
+        .playlists
+        .get(app.selected_playlist)
+        .is_some_and(|p| p.id == SAVED_TRACKS_PLAYLIST_ID);
+
     if app.playlists.is_empty() {
         let content_area = draw_section(frame, area, "Tracks", active);
         let para = Paragraph::new("No playlists. Press 'n' to create one.").style(muted_style());
+        frame.render_widget(para, content_area);
+        return;
+    }
+
+    if saved_tracks_selected && app.playlist_tracks.is_empty() {
+        let content_area = draw_section(frame, area, "Saved Tracks", active);
+        let para = Paragraph::new("No saved tracks. Press 's' on a track to save it.")
+            .style(muted_style());
         frame.render_widget(para, content_area);
         return;
     }

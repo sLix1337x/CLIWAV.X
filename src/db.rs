@@ -59,6 +59,18 @@ impl Database {
                 FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
                 FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE SET NULL
             );
+
+            CREATE TABLE IF NOT EXISTS saved_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                artist TEXT NOT NULL,
+                album TEXT NOT NULL DEFAULT '',
+                duration_ms INTEGER,
+                playable_url TEXT NOT NULL UNIQUE,
+                source TEXT NOT NULL,
+                thumbnail_url TEXT,
+                external_id TEXT
+            );
             "#,
         )?;
         Ok(())
@@ -329,6 +341,72 @@ impl Database {
             track.source.as_str(),
         )
     }
+
+    pub fn save_track(&self, track: &UnifiedTrack) -> Result<()> {
+        self.conn.execute(
+            r#"
+            INSERT OR IGNORE INTO saved_tracks
+                (title, artist, album, duration_ms, playable_url, source, thumbnail_url, external_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "#,
+            (
+                &track.title,
+                &track.artist,
+                &track.album,
+                track.duration_ms,
+                &track.playable_url,
+                track.source.as_str(),
+                track.thumbnail_url.as_ref(),
+                Some(&track.id),
+            ),
+        )?;
+        Ok(())
+    }
+
+    pub fn list_saved_tracks(&self) -> Result<Vec<UnifiedTrack>> {
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT title, artist, album, duration_ms, playable_url, source, thumbnail_url, external_id
+            FROM saved_tracks
+            ORDER BY id
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let source_str: String = row.get(5)?;
+            let source = match source_str.as_str() {
+                "local" => TrackSource::Local,
+                "youtube" => TrackSource::YouTube,
+                "soundcloud" => TrackSource::SoundCloud,
+                "spotify" => TrackSource::Spotify,
+                _ => TrackSource::Local,
+            };
+            let playable_url: String = row.get(4)?;
+            let id = row
+                .get::<_, Option<String>>(7)?
+                .unwrap_or_else(|| playable_url.clone());
+            Ok(UnifiedTrack {
+                id,
+                title: row.get(0)?,
+                artist: row.get(1)?,
+                album: row.get(2)?,
+                duration_ms: row.get::<_, Option<u64>>(3)?,
+                source,
+                playable_url,
+                thumbnail_url: row.get(6)?,
+            })
+        })?;
+        let mut tracks = Vec::new();
+        for row in rows {
+            tracks.push(row?);
+        }
+        Ok(tracks)
+    }
+
+    pub fn delete_saved_track(&self, playable_url: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM saved_tracks WHERE playable_url = ?1", [playable_url])?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -446,6 +524,38 @@ mod tests {
             )
             .unwrap();
         assert_eq!(remaining, 0);
+        drop(db);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn saved_tracks_round_trip() {
+        let (db, path) = temp_db("saved");
+        let track = UnifiedTrack {
+            id: "sc:123".to_string(),
+            title: "Liked Song".to_string(),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            duration_ms: Some(123_000),
+            source: TrackSource::SoundCloud,
+            playable_url: "https://soundcloud.com/artist/track".to_string(),
+            thumbnail_url: Some("https://img/small.jpg".to_string()),
+        };
+
+        db.save_track(&track).unwrap();
+        let saved = db.list_saved_tracks().unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].id, "sc:123");
+        assert_eq!(saved[0].title, "Liked Song");
+        assert_eq!(saved[0].source, TrackSource::SoundCloud);
+
+        // Saving the same track again must be a quiet no-op.
+        db.save_track(&track).unwrap();
+        assert_eq!(db.list_saved_tracks().unwrap().len(), 1);
+
+        db.delete_saved_track(&track.playable_url).unwrap();
+        assert!(db.list_saved_tracks().unwrap().is_empty());
+
         drop(db);
         let _ = std::fs::remove_file(path);
     }
