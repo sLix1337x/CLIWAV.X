@@ -1,0 +1,17 @@
+/target
+**/*.rs.bk
+*.log
+climusic.db
+
+# Local runtime / test artifacts
+test_audio.mp3
+
+# Local tooling / runtime dependencies (machine-specific paths)
+/tools/yt-dlp.exe
+/tools/yt-dlp.cmd
+/yt_dlp_pkg/
+/yt_dlp.whl
+/get-pip.py
+
+# IDE / assistant session directories
+.claude/
