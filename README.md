@@ -34,8 +34,6 @@ Optional:
 
 ## Install
 
-> Requires [mpv](https://mpv.io/) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) to be installed and on your PATH.
-
 ### One-liner (recommended)
 
 Open PowerShell and run:
@@ -44,9 +42,14 @@ Open PowerShell and run:
 irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex
 ```
 
-This downloads the latest release binary, copies it to `%LOCALAPPDATA%\CLIWAV.X`, and adds that folder to your user PATH.
+The installer will:
+1. Install [mpv](https://mpv.io/) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) automatically if `winget` is available and they are missing.
+2. Download the latest `cliwavx.exe` release binary and copy it to `%LOCALAPPDATA%\CLIWAV.X`.
+3. Add that folder to your user PATH.
 
-After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so the new PATH is picked up. Then you can run `cliwavx` from any folder.
+If `winget` is unavailable, yt-dlp is downloaded as a portable executable into the same install folder. mpv will need to be installed manually in that case.
+
+After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so PATH changes are picked up. Then you can run `cliwavx` from any folder.
 
 ### Build from source
 
@@ -56,7 +59,7 @@ If you have the [Rust toolchain](https://rustup.rs/) installed, you can also bui
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-That script will build an optimized release binary (`cargo build --release`), copy it to `%LOCALAPPDATA%\CLIWAV.X`, and add it to your user PATH.
+That script installs dependencies (when possible), builds an optimized release binary, copies it to `%LOCALAPPDATA%\CLIWAV.X`, and adds it to your user PATH.
 
 ## Build
 
