@@ -6,6 +6,10 @@ Last updated: 2026-08-06
 
 Core next-step features are implemented and verified on Windows 11:
 
+- [x] Global `cliwavx` command via Windows PATH installer (`install.ps1`) and one-liner `irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex`.
+- [x] GitHub Pages landing page at `https://sLix1337x.github.io/CLIWAV.X/`.
+- [x] Automated Windows release workflow (`.github/workflows/release.yml`) builds `cliwavx.exe` on every push to `master` and attaches it to a `latest` release.
+
 - [x] Library tab + playlist CRUD
 - [x] Spotify credential setup wizard (`S`)
 - [x] SoundCloud username browsing: Tracks / Likes / Reposts (`C` to set username, SoundCloud tab)

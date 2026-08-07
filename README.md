@@ -34,26 +34,29 @@ Optional:
 
 ## Install
 
-> Requires [mpv](https://mpv.io/), [yt-dlp](https://github.com/yt-dlp/yt-dlp), and the [Rust toolchain](https://rustup.rs/) to be installed and on your PATH.
+> Requires [mpv](https://mpv.io/) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) to be installed and on your PATH.
 
-The easiest way to install CLIWAV.X on Windows is with the provided PowerShell script:
+### One-liner (recommended)
+
+Open PowerShell and run:
+
+```powershell
+irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex
+```
+
+This downloads the latest release binary, copies it to `%LOCALAPPDATA%\CLIWAV.X`, and adds that folder to your user PATH.
+
+After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so the new PATH is picked up. Then you can run `cliwavx` from any folder.
+
+### Build from source
+
+If you have the [Rust toolchain](https://rustup.rs/) installed, you can also build and install locally:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The installer will:
-1. Build an optimized release binary (`cargo build --release`).
-2. Copy `target/release/cliwavx.exe` to `%LOCALAPPDATA%\CLIWAV.X`.
-3. Add `%LOCALAPPDATA%\CLIWAV.X` to your user PATH.
-
-After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so the new PATH is picked up. Then you can run:
-
-```bash
-cliwavx
-```
-
-from any folder on the system.
+That script will build an optimized release binary (`cargo build --release`), copy it to `%LOCALAPPDATA%\CLIWAV.X`, and add it to your user PATH.
 
 ## Build
 
