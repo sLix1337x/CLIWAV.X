@@ -3,36 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CLIWAV.X — Premium CLI Music Player</title>
-  <meta name="description" content="A low-overhead, dark-themed CLI music player for Windows. Play local files, YouTube, SoundCloud, and Spotify discovery from a keyboard-driven TUI.">
+  <title>CLIWAV.X — Music, inside your terminal</title>
+  <meta name="description" content="A low-overhead, keyboard-driven CLI music player for Windows 11. Play local files, YouTube, SoundCloud, and Spotify discovery from a single Rust TUI.">
+  <meta property="og:title" content="CLIWAV.X — Music, inside your terminal">
+  <meta property="og:description" content="Low overhead. Pure sound. CLI control. A dashboard-first terminal music player for Windows 11.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/sLix1337x/CLIWAV.X/master/CLIWAVEX-LOGO.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/png" href="https://raw.githubusercontent.com/sLix1337x/CLIWAV.X/master/CLIWAVEX-LOGO.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #050507;
-      --bg-elevated: #0e0e12;
-      --bg-card: #13131a;
+      --bg: #08080b;
+      --bg-elevated: #0e0e13;
+      --bg-card: #121218;
+      --bg-card-hover: #16161d;
       --border: rgba(255, 255, 255, 0.08);
       --border-hover: rgba(255, 255, 255, 0.16);
-      --text: #f2f2f7;
-      --text-muted: #8e8ea0;
-      --accent-cyan: #00f0ff;
-      --accent-pink: #ff2d95;
-      --accent-purple: #7b61ff;
-      --accent-amber: #ffb800;
-      --gradient: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
-      --gradient-soft: linear-gradient(135deg, rgba(0, 240, 255, 0.12), rgba(255, 45, 149, 0.12));
-      --radius: 20px;
-      --radius-sm: 12px;
-      --shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+      --text: #f4f4f6;
+      --text-muted: #8c8c9c;
+      --text-faint: #56566a;
+      --accent: #7c5cfc;
+      --accent-soft: #a494ff;
+      --accent-dim: rgba(124, 92, 252, 0.14);
+      --accent-line: rgba(124, 92, 252, 0.35);
+      --gradient: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      --radius-lg: 22px;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
     }
 
     * { box-sizing: border-box; }
-
-    html {
-      scroll-behavior: smooth;
-    }
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
@@ -41,43 +47,32 @@
       font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       line-height: 1.6;
       overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* Ambient background glows */
+    /* Ambient background */
     .ambient {
       position: fixed;
       inset: 0;
       pointer-events: none;
       z-index: 0;
       overflow: hidden;
+      background:
+        radial-gradient(680px 460px at 82% -8%, rgba(124, 92, 252, 0.16), transparent 60%),
+        radial-gradient(560px 420px at 8% 18%, rgba(124, 92, 252, 0.08), transparent 65%);
     }
-    .ambient::before,
-    .ambient::after {
-      content: '';
-      position: absolute;
-      border-radius: 50%;
-      filter: blur(140px);
-      opacity: 0.22;
-      animation: float 10s ease-in-out infinite alternate;
-    }
-    .ambient::before {
-      width: 600px;
-      height: 600px;
-      background: var(--accent-cyan);
-      top: -180px;
-      right: -120px;
-    }
-    .ambient::after {
-      width: 700px;
-      height: 700px;
-      background: var(--accent-pink);
-      bottom: -220px;
-      left: -180px;
-      animation-delay: -5s;
-    }
-    @keyframes float {
-      from { transform: translate(0, 0) scale(1); }
-      to { transform: translate(40px, 60px) scale(1.08); }
+    .grain {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 0.5;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 64px 64px;
+      -webkit-mask-image: linear-gradient(to bottom, black, transparent 480px);
+      mask-image: linear-gradient(to bottom, black, transparent 480px);
     }
 
     .container {
@@ -87,40 +82,43 @@
       margin: 0 auto;
     }
 
-    /* Navigation */
+    ::selection { background: var(--accent-dim); color: var(--text); }
+
+    /* Nav */
     nav {
       position: sticky;
       top: 0;
       z-index: 100;
       backdrop-filter: blur(16px);
-      background: rgba(5, 5, 7, 0.72);
+      -webkit-backdrop-filter: blur(16px);
+      background: rgba(8, 8, 11, 0.75);
       border-bottom: 1px solid var(--border);
     }
     .nav-inner {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      height: 72px;
+      height: 68px;
     }
     .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
-      font-weight: 800;
-      font-size: 1.25rem;
-      letter-spacing: -0.02em;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.08rem;
+      letter-spacing: -0.01em;
       text-decoration: none;
       color: var(--text);
     }
     .brand img {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
       object-fit: cover;
     }
     .nav-links {
       display: flex;
-      gap: 32px;
+      gap: 30px;
       align-items: center;
       list-style: none;
       margin: 0;
@@ -129,14 +127,30 @@
     .nav-links a {
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.92rem;
+      font-size: 0.88rem;
       font-weight: 500;
       transition: color 0.2s;
     }
     .nav-links a:hover { color: var(--text); }
+    .nav-right { display: flex; align-items: center; gap: 18px; }
+    .nav-stars {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      padding: 7px 12px;
+      border-radius: 999px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .nav-stars:hover { border-color: var(--border-hover); color: var(--text); }
+    .nav-stars svg { width: 14px; height: 14px; color: var(--accent-soft); }
     .nav-cta {
       background: var(--gradient);
-      color: #050507;
+      color: #0a0a0f;
       border: none;
       padding: 9px 18px;
       border-radius: 999px;
@@ -148,13 +162,22 @@
     }
     .nav-cta:hover {
       transform: translateY(-1px);
-      box-shadow: 0 8px 24px rgba(0, 240, 255, 0.25);
+      box-shadow: 0 10px 28px rgba(124, 92, 252, 0.32);
     }
 
     /* Hero */
     .hero {
-      padding: 110px 0 80px;
+      padding: 100px 0 64px;
       text-align: center;
+    }
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--accent-soft);
+      margin: 0 0 22px;
     }
     .hero-badge {
       display: inline-flex;
@@ -162,28 +185,26 @@
       gap: 8px;
       padding: 6px 14px;
       border-radius: 999px;
-      background: var(--gradient-soft);
-      border: 1px solid var(--border);
-      color: var(--accent-cyan);
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-line);
+      color: var(--accent-soft);
       font-size: 0.78rem;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 28px;
+      margin-bottom: 22px;
     }
     .hero-badge span {
-      width: 7px;
-      height: 7px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: var(--accent-cyan);
-      box-shadow: 0 0 10px var(--accent-cyan);
+      background: var(--accent-soft);
+      box-shadow: 0 0 10px var(--accent);
     }
     .hero h1 {
-      font-size: clamp(3rem, 8vw, 6.2rem);
+      font-size: clamp(2.6rem, 7vw, 5rem);
       font-weight: 800;
-      letter-spacing: -0.05em;
-      line-height: 1.02;
-      margin: 0 0 24px;
+      letter-spacing: -0.045em;
+      line-height: 1.04;
+      margin: 0 0 20px;
     }
     .gradient-text {
       background: var(--gradient);
@@ -191,289 +212,484 @@
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
-    .hero p {
+    .hero p.lead {
       color: var(--text-muted);
-      font-size: clamp(1.05rem, 2.2vw, 1.35rem);
-      max-width: 620px;
-      margin: 0 auto 42px;
-      line-height: 1.55;
+      font-size: clamp(1rem, 2vw, 1.2rem);
+      max-width: 600px;
+      margin: 0 auto 38px;
+      line-height: 1.6;
     }
 
     /* Install command */
     .install-box {
-      max-width: 720px;
-      margin: 0 auto 28px;
+      max-width: 660px;
+      margin: 0 auto 24px;
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 10px;
+      padding: 4px;
       box-shadow: var(--shadow);
     }
-    .install-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 14px 10px;
-      color: var(--text-muted);
-      font-size: 0.78rem;
-      font-weight: 600;
-    }
-    .install-dots {
-      display: flex;
-      gap: 6px;
-    }
-    .install-dots i {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      display: block;
-    }
-    .install-dots i:nth-child(1) { background: #ff5f56; }
-    .install-dots i:nth-child(2) { background: #ffbd2e; }
-    .install-dots i:nth-child(3) { background: #27c93f; }
     .install-body {
       display: flex;
       align-items: center;
       gap: 12px;
-      background: #0a0a10;
-      border-radius: var(--radius-sm);
-      padding: 16px 20px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.92rem;
-      overflow: hidden;
+      background: var(--bg-elevated);
+      border-radius: calc(var(--radius) - 4px);
+      padding: 15px 18px;
+      font-family: var(--mono);
+      font-size: 0.88rem;
     }
+    .install-body .prompt { color: var(--text-faint); user-select: none; }
     .install-body code {
       flex: 1;
       color: var(--text);
       white-space: nowrap;
       overflow-x: auto;
+      text-align: left;
     }
     .install-body code::-webkit-scrollbar { height: 0; }
     .copy-btn {
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 8px 14px;
+      padding: 7px 14px;
       border-radius: 8px;
       font-family: inherit;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .copy-btn:hover {
       background: rgba(255, 255, 255, 0.12);
       border-color: var(--border-hover);
     }
     .copy-btn.copied {
-      color: var(--accent-cyan);
-      border-color: rgba(0, 240, 255, 0.4);
+      color: var(--accent-soft);
+      border-color: var(--accent-line);
+      background: var(--accent-dim);
     }
     .hero-ctas {
       display: flex;
-      gap: 16px;
+      gap: 14px;
       justify-content: center;
       flex-wrap: wrap;
+      margin-bottom: 46px;
     }
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      padding: 14px 28px;
+      gap: 9px;
+      padding: 13px 24px;
       border-radius: 999px;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       text-decoration: none;
-      transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+      transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s;
       border: 1px solid transparent;
     }
+    .btn svg { width: 16px; height: 16px; }
     .btn-primary {
       background: var(--gradient);
-      color: #050507;
-      box-shadow: 0 10px 30px rgba(0, 240, 255, 0.22);
+      color: #0a0a0f;
+      box-shadow: 0 10px 30px rgba(124, 92, 252, 0.25);
     }
     .btn-primary:hover {
       transform: translateY(-2px);
-      box-shadow: 0 16px 40px rgba(0, 240, 255, 0.32);
+      box-shadow: 0 16px 40px rgba(124, 92, 252, 0.35);
     }
     .btn-secondary {
-      background: rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.03);
       color: var(--text);
       border-color: var(--border);
     }
     .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.07);
       border-color: var(--border-hover);
     }
 
-    /* Terminal mockup */
-    .terminal {
-      max-width: 900px;
-      margin: 70px auto 0;
+    /* Meta stats row */
+    .stats-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      flex-wrap: wrap;
+      color: var(--text-faint);
+      font-size: 0.82rem;
+      font-weight: 500;
+    }
+    .stats-row .stat {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .stats-row svg { width: 14px; height: 14px; color: var(--text-faint); }
+    .stats-row .divider {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--text-faint);
+    }
+
+    /* Dashboard mockup */
+    .mock {
+      max-width: 940px;
+      margin: 66px auto 0;
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: var(--radius);
+      border-radius: var(--radius-lg);
       box-shadow: var(--shadow);
       overflow: hidden;
+      text-align: left;
     }
-    .terminal-header {
+    .mock-header {
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 16px 20px;
-      background: rgba(255, 255, 255, 0.02);
+      padding: 14px 20px;
+      background: var(--bg-elevated);
       border-bottom: 1px solid var(--border);
     }
-    .terminal-header i {
-      width: 12px;
-      height: 12px;
+    .mock-header i {
+      width: 11px;
+      height: 11px;
       border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
     }
-    .terminal-header i:nth-child(1) { background: #ff5f56; }
-    .terminal-header i:nth-child(2) { background: #ffbd2e; }
-    .terminal-header i:nth-child(3) { background: #27c93f; }
-    .terminal-title {
-      margin-left: 12px;
-      color: var(--text-muted);
-      font-size: 0.78rem;
+    .mock-title {
+      margin-left: 10px;
+      color: var(--text-faint);
+      font-family: var(--mono);
+      font-size: 0.76rem;
+      font-weight: 500;
+    }
+    .mock-body {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+    .mock-pane {
+      background: var(--bg-card);
+      padding: 26px 28px;
+    }
+    .mock-label {
+      font-family: var(--mono);
+      font-size: 0.68rem;
       font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin: 0 0 18px;
     }
-    .terminal-body {
-      padding: 24px 28px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.85rem;
-      line-height: 1.7;
-      color: var(--text-muted);
+    .art-block {
+      width: 88px;
+      height: 88px;
+      border-radius: 14px;
+      background: var(--gradient);
+      display: grid;
+      place-items: center;
+      margin-bottom: 18px;
+      box-shadow: 0 12px 30px rgba(124, 92, 252, 0.3);
     }
-    .terminal-body .row { display: flex; gap: 18px; margin: 4px 0; }
-    .terminal-body .time { color: #5a5a6e; width: 40px; flex-shrink: 0; }
-    .terminal-body .playing { color: var(--accent-cyan); font-weight: 600; }
-    .terminal-body .title { color: var(--text); }
-    .terminal-body .artist { color: var(--accent-pink); }
-    .terminal-body .bar {
-      margin-top: 18px;
-      height: 6px;
+    .art-block svg { width: 34px; height: 34px; color: rgba(10, 10, 15, 0.75); }
+    .now-playing .track-title { font-weight: 700; font-size: 1.05rem; margin: 0 0 4px; }
+    .now-playing .track-artist { color: var(--accent-soft); font-size: 0.86rem; margin: 0 0 18px; }
+    .mock-progress {
+      height: 5px;
       border-radius: 3px;
       background: rgba(255, 255, 255, 0.08);
       overflow: hidden;
+      margin-bottom: 8px;
     }
-    .terminal-body .bar-fill {
-      width: 62%;
+    .mock-progress-fill {
+      width: 58%;
       height: 100%;
       background: var(--gradient);
       border-radius: 3px;
-      box-shadow: 0 0 16px rgba(0, 240, 255, 0.35);
     }
+    .mock-time {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-faint);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+    }
+    .mock-sub { display: flex; flex-direction: column; }
+    .mock-sub + .mock-sub { border-top: 1px solid var(--border); }
+    .mock-list { display: flex; flex-direction: column; gap: 2px; }
+    .mock-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 0;
+      font-size: 0.82rem;
+    }
+    .mock-row .idx {
+      color: var(--text-faint);
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      width: 14px;
+      flex-shrink: 0;
+    }
+    .mock-row .name { color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mock-row.active .name { color: var(--accent-soft); font-weight: 600; }
+    .mock-row .dur { color: var(--text-faint); font-family: var(--mono); font-size: 0.72rem; }
 
     /* Sections */
-    section { padding: 100px 0; }
+    section { padding: 96px 0; }
     .section-header {
       text-align: center;
-      margin-bottom: 64px;
+      margin-bottom: 58px;
+    }
+    .section-eyebrow {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent-soft);
+      margin: 0 0 14px;
     }
     .section-header h2 {
-      font-size: clamp(2rem, 4.5vw, 3rem);
+      font-size: clamp(1.8rem, 4vw, 2.6rem);
       font-weight: 800;
       letter-spacing: -0.03em;
       margin: 0 0 14px;
     }
     .section-header p {
       color: var(--text-muted);
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       max-width: 560px;
       margin: 0 auto;
+    }
+
+    /* Callout */
+    .callout {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 32px 36px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+    }
+    .callout p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 1.02rem;
+      line-height: 1.7;
+    }
+    .callout code {
+      font-family: var(--mono);
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 5px;
+      color: var(--text);
+      font-size: 0.9em;
     }
 
     /* Features grid */
     .features {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 24px;
+      gap: 20px;
     }
     .feature {
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 32px;
-      transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+      padding: 30px;
+      transition: transform 0.25s, border-color 0.25s, background 0.25s;
     }
     .feature:hover {
-      transform: translateY(-4px);
+      transform: translateY(-3px);
       border-color: var(--border-hover);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      background: var(--bg-card-hover);
     }
     .feature-icon {
-      width: 52px;
-      height: 52px;
-      border-radius: 14px;
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
       display: grid;
       place-items: center;
-      font-size: 1.4rem;
-      margin-bottom: 22px;
-      background: var(--gradient-soft);
-      border: 1px solid var(--border);
+      margin-bottom: 20px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-line);
+      color: var(--accent-soft);
     }
+    .feature-icon svg { width: 21px; height: 21px; }
     .feature h3 {
-      font-size: 1.15rem;
+      font-size: 1.08rem;
       font-weight: 700;
-      margin: 0 0 10px;
+      margin: 0 0 9px;
+      letter-spacing: -0.01em;
     }
     .feature p {
       color: var(--text-muted);
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       margin: 0;
-      line-height: 1.6;
+      line-height: 1.65;
     }
 
-    /* How it works strip */
+    /* Keybindings */
+    .kbd-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .kbd-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--bg-card);
+      padding: 16px 20px;
+    }
+    kbd {
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--text);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-hover);
+      border-bottom-width: 2px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .kbd-row .desc { color: var(--text-muted); font-size: 0.85rem; }
+
+    /* Steps */
     .steps {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 20px;
+      gap: 18px;
     }
     .step {
-      text-align: center;
-      padding: 36px 24px;
+      padding: 30px 26px;
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
     }
     .step-number {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      background: var(--gradient);
-      color: #050507;
-      font-weight: 800;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-line);
+      color: var(--accent-soft);
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.82rem;
       display: grid;
       place-items: center;
-      margin: 0 auto 18px;
+      margin-bottom: 18px;
     }
-    .step h4 { margin: 0 0 8px; font-size: 1.05rem; }
-    .step p { color: var(--text-muted); font-size: 0.9rem; margin: 0; }
+    .step h4 { margin: 0 0 8px; font-size: 1rem; font-weight: 700; }
+    .step p { color: var(--text-muted); font-size: 0.88rem; margin: 0; line-height: 1.6; }
+
+    /* Final CTA */
+    .cta-band {
+      text-align: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 64px 40px;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-band::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(420px 220px at 50% 0%, rgba(124, 92, 252, 0.16), transparent 70%);
+      pointer-events: none;
+    }
+    .cta-band h2 {
+      position: relative;
+      font-size: clamp(1.6rem, 3.6vw, 2.3rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin: 0 0 14px;
+    }
+    .cta-band p {
+      position: relative;
+      color: var(--text-muted);
+      font-size: 1rem;
+      margin: 0 0 30px;
+    }
+    .cta-band .hero-ctas { position: relative; margin-bottom: 0; }
 
     /* Footer */
     footer {
       border-top: 1px solid var(--border);
-      padding: 50px 0;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 0.88rem;
+      padding: 56px 0 40px;
     }
-    footer a { color: var(--text); text-decoration: none; margin: 0 10px; }
-    footer a:hover { text-decoration: underline; }
+    .footer-top {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 40px;
+      margin-bottom: 40px;
+    }
+    .footer-brand { max-width: 280px; }
+    .footer-brand .brand { margin-bottom: 12px; }
+    .footer-brand p {
+      color: var(--text-faint);
+      font-size: 0.86rem;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .footer-cols { display: flex; gap: 56px; flex-wrap: wrap; }
+    .footer-col h5 {
+      font-size: 0.76rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin: 0 0 16px;
+    }
+    .footer-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+    .footer-col a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      transition: color 0.2s;
+    }
+    .footer-col a:hover { color: var(--text); }
+    .footer-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-top: 28px;
+      border-top: 1px solid var(--border);
+      color: var(--text-faint);
+      font-size: 0.82rem;
+    }
 
-    @media (max-width: 640px) {
+    @media (max-width: 760px) {
       .nav-links { display: none; }
-      .hero { padding: 80px 0 60px; }
-      .install-body { font-size: 0.8rem; padding: 14px 16px; }
-      .feature, .step { padding: 26px; }
+      .mock-body { grid-template-columns: 1fr; }
+      .hero { padding: 76px 0 50px; }
+      section { padding: 72px 0; }
+      .callout { padding: 26px; }
+      .footer-top { flex-direction: column; }
     }
   </style>
 </head>
 <body>
   <div class="ambient"></div>
+  <div class="grain"></div>
 
   <nav>
     <div class="container nav-inner">
@@ -483,95 +699,188 @@
       </a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
+        <li><a href="#keybindings">Keybindings</a></li>
         <li><a href="#how-it-works">How it works</a></li>
-        <li><a href="https://github.com/sLix1337x/CLIWAV.X" target="_blank" rel="noopener">GitHub</a></li>
       </ul>
-      <a class="nav-cta" href="#install">Install</a>
+      <div class="nav-right">
+        <a class="nav-stars" href="https://github.com/sLix1337x/CLIWAV.X" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.26 6.9.6-5.2 4.5 1.6 6.74L12 16.9l-6.2 3.2 1.6-6.74-5.2-4.5 6.9-.6L12 2Z"/></svg>
+          <span id="star-count">GitHub</span>
+        </a>
+        <a class="nav-cta" href="#install">Install</a>
+      </div>
     </div>
   </nav>
 
   <header class="hero" id="install">
     <div class="container">
-      <div class="hero-badge"><span></span>Now available for Windows 11</div>
+      <p class="eyebrow">Low overhead &middot; Pure sound &middot; CLI control</p>
+      <div class="hero-badge"><span></span>Built in Rust for Windows 11</div>
       <h1>Music, inside your<br><span class="gradient-text">terminal.</span></h1>
-      <p>A low-overhead, dark-themed CLI music player. Stream local files, YouTube, SoundCloud, and Spotify discovery without leaving the keyboard.</p>
+      <p class="lead">A dashboard-first CLI music player. Stream local files, YouTube, SoundCloud, and Spotify discovery without ever leaving the keyboard.</p>
 
       <div class="install-box">
-        <div class="install-header">
-          <div class="install-dots"><i></i><i></i><i></i></div>
-          <span>PowerShell</span>
-        </div>
         <div class="install-body">
+          <span class="prompt">PS&gt;</span>
           <code id="install-command">irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex</code>
           <button class="copy-btn" id="copy-btn" onclick="copyInstall()">Copy</button>
         </div>
       </div>
 
       <div class="hero-ctas">
-        <a class="btn btn-primary" href="https://github.com/sLix1337x/CLIWAV.X/releases/latest" target="_blank" rel="noopener">Download latest release</a>
-        <a class="btn btn-secondary" href="https://github.com/sLix1337x/CLIWAV.X" target="_blank" rel="noopener">View on GitHub</a>
+        <a class="btn btn-primary" href="https://github.com/sLix1337x/CLIWAV.X/releases/latest" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+          Download latest release
+        </a>
+        <a class="btn btn-secondary" href="https://github.com/sLix1337x/CLIWAV.X" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55v-2.15c-3.2.7-3.87-1.36-3.87-1.36-.53-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.24 2.76.12 3.05.74.8 1.18 1.83 1.18 3.09 0 4.42-2.7 5.4-5.26 5.68.42.36.78 1.07.78 2.16v3.2c0 .3.21.66.79.55A10.52 10.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+          View on GitHub
+        </a>
       </div>
 
-      <div class="terminal">
-        <div class="terminal-header">
+      <div class="stats-row">
+        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2Z"/><path d="M14 2v6h6"/></svg>MIT License</span>
+        <span class="divider"></span>
+        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Windows 11</span>
+        <span class="divider"></span>
+        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>Written in Rust</span>
+        <span class="divider"></span>
+        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>Zero-bloat, mpv-powered</span>
+      </div>
+
+      <div class="mock">
+        <div class="mock-header">
           <i></i><i></i><i></i>
-          <span class="terminal-title">CLIWAV.X</span>
+          <span class="mock-title">cliwavx.exe — dashboard</span>
         </div>
-        <div class="terminal-body">
-          <div class="row"><span class="time">0:42</span><span class="playing">▶ Playing</span><span class="title">She Neva Knows</span><span class="artist">~ lofi ver</span></div>
-          <div class="row"><span class="time"></span><span>Source: SoundCloud · Queue: 12 tracks · Shuffle: On</span></div>
-          <div class="bar"><div class="bar-fill"></div></div>
+        <div class="mock-body">
+          <div class="mock-pane now-playing">
+            <p class="mock-label">Now Playing</p>
+            <div class="art-block">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            </div>
+            <p class="track-title">She Neva Knows</p>
+            <p class="track-artist">lofi ver &middot; SoundCloud</p>
+            <div class="mock-progress"><div class="mock-progress-fill"></div></div>
+            <div class="mock-time"><span>1:47</span><span>3:02</span></div>
+          </div>
+          <div class="mock-pane">
+            <div class="mock-sub">
+              <p class="mock-label">SoundCloud &middot; Tracks</p>
+              <div class="mock-list">
+                <div class="mock-row active"><span class="idx">▶</span><span class="name">She Neva Knows</span><span class="dur">3:02</span></div>
+                <div class="mock-row"><span class="idx">02</span><span class="name">Late Night Drive</span><span class="dur">2:41</span></div>
+                <div class="mock-row"><span class="idx">03</span><span class="name">Rooftop Session</span><span class="dur">4:15</span></div>
+              </div>
+            </div>
+            <div class="mock-sub">
+              <p class="mock-label">Queue &middot; 12 tracks</p>
+              <div class="mock-list">
+                <div class="mock-row"><span class="idx">01</span><span class="name">Midnight Static</span><span class="dur">3:20</span></div>
+                <div class="mock-row"><span class="idx">02</span><span class="name">Amber Skies</span><span class="dur">2:58</span></div>
+                <div class="mock-row"><span class="idx">03</span><span class="name">Nocturne EP</span><span class="dur">3:44</span></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </header>
 
+  <section id="why">
+    <div class="container">
+      <div class="callout">
+        <p><strong style="color: var(--text);">Why not just use a browser?</strong> Browsers are heavy. <code>CLIWAV.X</code> uses a native Rust TUI and offloads audio decoding to <code>mpv</code>, so the CPU and memory footprint stays tiny — built to stay out of the way while you're gaming or working.</p>
+      </div>
+    </div>
+  </section>
+
   <section id="features">
     <div class="container">
       <div class="section-header">
+        <p class="section-eyebrow">Features</p>
         <h2>Built for focus.</h2>
-        <p>Everything you need to play music without the bloat of a browser or heavy desktop app.</p>
+        <p>Everything you need to play music, without the bloat of a browser tab or a heavy desktop app.</p>
       </div>
       <div class="features">
         <div class="feature">
-          <div class="feature-icon">🎛️</div>
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          </div>
           <h3>Dashboard-first TUI</h3>
-          <p>Your playing track, SoundCloud lists, and queue — all visible on one screen. Switch panes and categories instantly.</p>
+          <p>Now playing, your SoundCloud Tracks/Likes/Reposts, and the queue — all visible at once. No username configured? Genre buckets like Trending and Lo-Fi work out of the box.</p>
         </div>
         <div class="feature">
-          <div class="feature-icon">🎵</div>
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+          </div>
           <h3>Every source you use</h3>
-          <p>Local FLAC/MP3/OGG, YouTube, SoundCloud Tracks/Likes/Reposts, and Spotify search results resolved through your preferred backend.</p>
+          <p>Local FLAC/MP3/OGG/OPUS/M4A/WAV, YouTube and SoundCloud via <code>yt-dlp</code>, and Spotify search resolved through YouTube or your own library.</p>
         </div>
         <div class="feature">
-          <div class="feature-icon">🖼️</div>
-          <h3>Artwork &amp; accent color</h3>
-          <p>Album art renders inline in supported terminals, and a cover-driven accent color tints the UI to match what's playing.</p>
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          </div>
+          <h3>Inline album artwork</h3>
+          <p>Artwork renders directly in the terminal via <code>ratatui-image</code> — full color in Kitty, iTerm2, or WezTerm, a crisp halfblock fallback everywhere else.</p>
         </div>
         <div class="feature">
-          <div class="feature-icon">🔁</div>
-          <h3>Queue, repeat &amp; shuffle</h3>
-          <p>Auto-advance, repeat track/all, and shuffle across any list — Search results, playlists, or SoundCloud pages.</p>
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2s7 7.58 7 12a7 7 0 1 1-14 0c0-4.42 7-12 7-12Z"/></svg>
+          </div>
+          <h3>Cover-driven accent color</h3>
+          <p>A vibrant color is pulled from each track's artwork and tints the Now Playing panel and volume meter. Press <kbd>t</kbd> to switch to a curated palette instead.</p>
         </div>
         <div class="feature">
-          <div class="feature-icon">⌨️</div>
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          </div>
+          <h3>Unified queue &amp; shuffle</h3>
+          <p>Mix tracks from any source in one queue. Repeat off/track/all, shuffle, and auto-advance through whatever list you're playing from.</p>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h12"/></svg>
+          </div>
           <h3>Keyboard-driven</h3>
-          <p>Vim-style navigation, global shortcuts, and a help overlay so you never have to reach for the mouse.</p>
-        </div>
-        <div class="feature">
-          <div class="feature-icon">⚡</div>
-          <h3>Lightweight</h3>
-          <p>Audio decoding is offloaded to mpv; the Rust TUI stays tiny in CPU and memory, perfect for gaming or multitasking.</p>
+          <p>Vim-style navigation, global shortcuts for every action, and an in-app help overlay — the mouse never needs to leave the desk.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="how-it-works" style="padding-top: 40px;">
+  <section id="keybindings">
     <div class="container">
       <div class="section-header">
+        <p class="section-eyebrow">Keybindings</p>
+        <h2>Everything's a keystroke away.</h2>
+        <p>A sample of the shortcuts — press <kbd>?</kbd> in-app for the full reference.</p>
+      </div>
+      <div class="kbd-grid">
+        <div class="kbd-row"><kbd>1</kbd>–<kbd>6</kbd><span class="desc">Jump to any tab</span></div>
+        <div class="kbd-row"><kbd>Tab</kbd><span class="desc">Switch tabs / panes</span></div>
+        <div class="kbd-row"><kbd>↑</kbd><kbd>↓</kbd><span class="desc">Navigate the current list</span></div>
+        <div class="kbd-row"><kbd>Space</kbd><span class="desc">Pause / resume</span></div>
+        <div class="kbd-row"><kbd>n</kbd><span class="desc">Next track</span></div>
+        <div class="kbd-row"><kbd>a</kbd><span class="desc">Add track to queue</span></div>
+        <div class="kbd-row"><kbd>+</kbd><kbd>-</kbd><span class="desc">Volume up / down</span></div>
+        <div class="kbd-row"><kbd>f</kbd><span class="desc">Cycle source filter</span></div>
+        <div class="kbd-row"><kbd>l</kbd><span class="desc">Cycle repeat mode</span></div>
+        <div class="kbd-row"><kbd>x</kbd><span class="desc">Toggle shuffle</span></div>
+        <div class="kbd-row"><kbd>t</kbd><span class="desc">Cycle accent palette</span></div>
+        <div class="kbd-row"><kbd>g</kbd><span class="desc">Toggle game mode</span></div>
+        <div class="kbd-row"><kbd>?</kbd><span class="desc">Toggle keybindings help</span></div>
+        <div class="kbd-row"><kbd>Q</kbd><span class="desc">Quit</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how-it-works">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-eyebrow">Architecture</p>
         <h2>How it works</h2>
-        <p>Three solid pieces, zero unnecessary complexity.</p>
+        <p>Four solid pieces, zero unnecessary complexity.</p>
       </div>
       <div class="steps">
         <div class="step">
@@ -586,8 +895,29 @@
         </div>
         <div class="step">
           <div class="step-number">3</div>
+          <h4>SQLite indexes your library</h4>
+          <p>Local metadata is read with <code>lofty</code> and indexed in SQLite for instant search.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">4</div>
           <h4>Ratatui drives the UI</h4>
-          <p>A Rust TUI renders artwork, lists, meters, and the dashboard at a low refresh cost.</p>
+          <p>A Rust TUI renders artwork, lists, and meters at a low refresh cost — even in game mode.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="get-started">
+    <div class="container">
+      <div class="cta-band">
+        <h2>Get the sound out of your browser.</h2>
+        <p>One command, and you're playing music from the terminal.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="#install">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            Install CLIWAV.X
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/sLix1337x/CLIWAV.X#readme" target="_blank" rel="noopener">Read the docs</a>
         </div>
       </div>
     </div>
@@ -595,12 +925,45 @@
 
   <footer>
     <div class="container">
-      <p>
-        <a href="https://github.com/sLix1337x/CLIWAV.X" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/sLix1337x/CLIWAV.X/releases/latest" target="_blank" rel="noopener">Releases</a>
-        <a href="https://github.com/sLix1337x/CLIWAV.X#readme" target="_blank" rel="noopener">Docs</a>
-      </p>
-      <p>MIT License · Built with Rust, mpv, and yt-dlp.</p>
+      <div class="footer-top">
+        <div class="footer-brand">
+          <a href="#" class="brand">
+            <img src="https://raw.githubusercontent.com/sLix1337x/CLIWAV.X/master/CLIWAVEX-LOGO.png" alt="CLIWAV.X logo">
+            CLIWAV.X
+          </a>
+          <p>A low-overhead, keyboard-driven CLI music player for Windows 11. Built with Rust, mpv, and yt-dlp.</p>
+        </div>
+        <div class="footer-cols">
+          <div class="footer-col">
+            <h5>Product</h5>
+            <ul>
+              <li><a href="#features">Features</a></li>
+              <li><a href="#keybindings">Keybindings</a></li>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X/releases/latest" target="_blank" rel="noopener">Releases</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h5>Resources</h5>
+            <ul>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X#readme" target="_blank" rel="noopener">Documentation</a></li>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X#configuration" target="_blank" rel="noopener">Configuration</a></li>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X/blob/master/install.ps1" target="_blank" rel="noopener">Install script</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h5>Community</h5>
+            <ul>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X" target="_blank" rel="noopener">GitHub</a></li>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X/issues" target="_blank" rel="noopener">Issues</a></li>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X/blob/master/LICENSE" target="_blank" rel="noopener">MIT License</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2026 CLIWAV.X. Built with Rust, mpv, and yt-dlp.</span>
+        <span>Low overhead. Pure sound. CLI control.</span>
+      </div>
     </div>
   </footer>
 
@@ -617,6 +980,15 @@
         }, 2000);
       });
     }
+
+    fetch('https://api.github.com/repos/sLix1337x/CLIWAV.X')
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        if (typeof data.stargazers_count === 'number') {
+          document.getElementById('star-count').textContent = data.stargazers_count.toLocaleString();
+        }
+      })
+      .catch(() => {});
   </script>
 </body>
 </html>
