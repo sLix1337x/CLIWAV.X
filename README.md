@@ -32,20 +32,43 @@ Optional:
 - Spotify Web API credentials for search: https://developer.spotify.com/dashboard
 - `cookies_from_browser = "firefox"` (or chrome/edge/...) in `config.toml` reuses your logged-in browser session for yt-dlp — needed for private Likes and subscriber/region-gated tracks.
 
+## Install
+
+> Requires [mpv](https://mpv.io/), [yt-dlp](https://github.com/yt-dlp/yt-dlp), and the [Rust toolchain](https://rustup.rs/) to be installed and on your PATH.
+
+The easiest way to install CLIWAV.X on Windows is with the provided PowerShell script:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+The installer will:
+1. Build an optimized release binary (`cargo build --release`).
+2. Copy `target/release/cliwavx.exe` to `%LOCALAPPDATA%\CLIWAV.X`.
+3. Add `%LOCALAPPDATA%\CLIWAV.X` to your user PATH.
+
+After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so the new PATH is picked up. Then you can run:
+
+```bash
+cliwavx
+```
+
+from any folder on the system.
+
 ## Build
 
 ```bash
-cargo build --release   # optimized (LTO, stripped): target/release/CLIWAVX.exe
+cargo build --release   # optimized (LTO, stripped): target/release/cliwavx.exe
 ```
 
 ## Usage
 
 ```bash
-# Launch interactive TUI (binary: CLIWAVX.exe)
-CLIWAVX
+# Launch interactive TUI (binary: cliwavx.exe)
+cliwavx
 
 # Launch with a search query
-CLIWAVX -q "lofi hip hop"
+cliwavx -q "lofi hip hop"
 ```
 
 ### Keybindings

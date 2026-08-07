@@ -7,7 +7,7 @@ description = "Low-overhead CLI music player for local files, YouTube, SoundClou
 license = "MIT"
 repository = "https://github.com/sLix1337x/CLIWAV.X"
 # Default binary for bare `cargo run` (the executable name cannot contain '.').
-default-run = "CLIWAVX"
+default-run = "cliwavx"
 
 [profile.release]
 lto = true
@@ -18,7 +18,7 @@ strip = true
 # name). Cargo/rustc don't allow '.' in a target name, so the binary target
 # is the dotless form (the library crate stays "climusic").
 [[bin]]
-name = "CLIWAVX"
+name = "cliwavx"
 path = "src/main.rs"
 
 [dependencies]
