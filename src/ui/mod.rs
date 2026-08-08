@@ -22,7 +22,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
             Constraint::Length(1),  // divider
             Constraint::Min(10),   // tab content
             Constraint::Length(1),  // divider
-            Constraint::Length(4),  // now-playing hero row
+            Constraint::Length(5),  // now-playing hero row
             Constraint::Length(4),  // controls
             Constraint::Length(1),  // status bar
         ])

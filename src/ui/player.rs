@@ -133,6 +133,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         )),
         Line::default(),
         Line::from(progress_spans),
+        Line::default(),
         Line::from(volume_spans),
         Line::from(vec![
             Span::styled("Repeat: ", muted_style()),
@@ -144,10 +145,82 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
     ];
-
-    // Centered hero layout: artwork (capped width, horizontally centered)
-    // stacked over the info block, the whole group vertically centered.
     let text_h = lines.len() as u16;
+
+    // Side-by-side on anything reasonably wide: artwork on the left, the
+    // info block on the right, both vertically centered on the same row so
+    // they read as one aligned unit instead of a stack whose pieces drift
+    // apart at different widths. Narrow terminals fall back to the old
+    // stacked layout — there isn't room for a legible cover next to a
+    // legible text column below ~70 columns.
+    if content_area.width >= NOW_PLAYING_SIDE_BY_SIDE_MIN_WIDTH {
+        draw_side_by_side(frame, app, content_area, lines, text_h);
+    } else {
+        draw_stacked(frame, app, content_area, lines, text_h);
+    }
+}
+
+const NOW_PLAYING_SIDE_BY_SIDE_MIN_WIDTH: u16 = 70;
+/// Horizontal gap between the artwork column and the info column.
+const NOW_PLAYING_GAP: u16 = 3;
+/// Artwork never grows past this even on very wide terminals — it's a
+/// side column sharing space with text, not the whole show.
+const NOW_PLAYING_MAX_ART_WIDTH: u16 = 36;
+
+fn draw_side_by_side<'a>(
+    frame: &mut Frame,
+    app: &App,
+    content_area: Rect,
+    lines: Vec<Line<'a>>,
+    text_h: u16,
+) {
+    let art_w = ((content_area.width.saturating_sub(NOW_PLAYING_GAP)) * 2 / 5)
+        .min(NOW_PLAYING_MAX_ART_WIDTH);
+    let text_w = content_area.width.saturating_sub(art_w + NOW_PLAYING_GAP);
+    // Small top/bottom margin so the cover never touches the section's edges.
+    let art_budget = content_area.height.saturating_sub(2);
+    let art_h = if art_w == 0 || art_budget == 0 {
+        0
+    } else {
+        square_art_height(app, art_w, art_budget)
+    };
+
+    // Both columns center on the same row of `content_area` — that's what
+    // keeps the cover and the text block visually aligned regardless of
+    // how tall either one ends up being.
+    let center_y = content_area.y + content_area.height / 2;
+    let art_y = center_y.saturating_sub(art_h / 2).max(content_area.y);
+    let text_y = center_y.saturating_sub(text_h / 2).max(content_area.y);
+
+    if art_h > 0 {
+        let art_area = Rect {
+            x: content_area.x,
+            y: art_y,
+            width: art_w,
+            height: art_h,
+        };
+        draw_artwork(frame, app, art_area);
+    }
+
+    let text_area = Rect {
+        x: content_area.x + art_w + NOW_PLAYING_GAP,
+        y: text_y,
+        width: text_w,
+        height: content_area.height.saturating_sub(text_y - content_area.y),
+    };
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Left), text_area);
+}
+
+/// Pre-side-by-side layout, kept for terminals too narrow to fit a legible
+/// cover next to a legible text column: artwork centered above the (also
+/// centered) info block, the whole group vertically centered as a unit.
+fn draw_stacked<'a>(
+    frame: &mut Frame,
+    app: &App,
+    content_area: Rect,
+    lines: Vec<Line<'a>>,
+    text_h: u16,
+) {
     let art_w = content_area.width.min(44);
     // When there's no vertical budget for artwork (e.g. a 80x24 terminal),
     // collapse it entirely rather than showing a useless 1-row sliver that
@@ -353,8 +426,10 @@ pub fn draw_now_playing_line(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // Vertically center by padding with blank lines — Paragraph has no
-    // vertical-alignment option of its own, only horizontal.
-    let top_pad = area.height.saturating_sub(lines.len() as u16) / 2;
+    // vertical-alignment option of its own, only horizontal. Rounds the
+    // top padding up (not down) so an odd leftover row goes above the
+    // content instead of silently padding out the bottom.
+    let top_pad = area.height.saturating_sub(lines.len() as u16).div_ceil(2);
     for _ in 0..top_pad {
         lines.insert(0, Line::default());
     }
