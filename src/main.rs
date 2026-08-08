@@ -244,6 +244,16 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
 
+        // Rewind/fast-forward the current track — checked before the
+        // Dashboard-specific arrows below so Shift+Left/Right always seeks,
+        // regardless of which tab/pane has focus.
+        KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            run!(app, app.seek_backward().await);
+        }
+        KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            run!(app, app.seek_forward().await);
+        }
+
         // Dashboard SoundCloud pane: switch Search/Tracks/Likes/Reposts/Library.
         KeyCode::Left
             if matches!(app.current_tab, Tab::Dashboard)

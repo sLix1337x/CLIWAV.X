@@ -24,6 +24,9 @@ const SOUNDCLOUD_PAGE_SIZE: usize = 100;
 /// reused before re-opening it re-runs yt-dlp.
 const SOUNDCLOUD_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// How far Shift+Left/Right rewinds/fast-forwards the current track.
+const SEEK_STEP_SECS: f64 = 5.0;
+
 /// Dashboard SoundCloud-pane selector slots: Search, then the three real
 /// `SoundCloudCategory::ALL` categories (slot index - 1), then a Library
 /// quick-access slot. Kept as plain indices (rather than folded into
@@ -1340,6 +1343,25 @@ impl App {
         self.volume = self.volume.saturating_sub(5);
         self.player.set_volume(self.volume).await?;
         Ok(())
+    }
+
+    /// Skip ahead within the current track. No-op when nothing is loaded —
+    /// mpv's `seek` errors on an idle player. `poll_playback` picks up the
+    /// new position on the next tick, so the progress bar catches up on its
+    /// own without an extra round-trip here.
+    pub async fn seek_forward(&mut self) -> Result<()> {
+        if self.current_track.is_none() {
+            return Ok(());
+        }
+        self.player.seek(SEEK_STEP_SECS).await
+    }
+
+    /// Skip back within the current track. See `seek_forward`.
+    pub async fn seek_backward(&mut self) -> Result<()> {
+        if self.current_track.is_none() {
+            return Ok(());
+        }
+        self.player.seek(-SEEK_STEP_SECS).await
     }
 
     pub fn toggle_help(&mut self) {

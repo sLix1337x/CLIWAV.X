@@ -90,6 +90,7 @@ cliwavx -q "lofi hip hop"
 | `a` | Add selected track to queue |
 | `p` | Add selected search track to current playlist |
 | `Space` | Pause / resume |
+| `Shift+←` / `Shift+→` | Rewind / fast-forward the current track by 5s |
 | `n` | Next track |
 | `n` (Library tab) | Create a new playlist |
 | `d` (Library tab) | Delete selected playlist |
