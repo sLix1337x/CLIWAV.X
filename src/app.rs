@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::db::{Database, Playlist};
 use crate::error::{ClimusicError, Result};
+use crate::player::eq;
 use crate::player::mpv::MpvPlayer;
 use crate::sources::local::{expand_path, scan_directory};
 use crate::sources::soundcloud::SoundCloudSource;
@@ -63,6 +64,7 @@ pub enum Tab {
     Library,
     SoundCloud,
     NowPlaying,
+    Eq,
 }
 
 /// Which pane of the Dashboard tab has keyboard focus (the Now Playing pane
@@ -283,6 +285,18 @@ pub struct App {
     /// Incremented once per UI tick; drives the animated loading spinner.
     pub tick: u64,
 
+    pub eq_gains: eq::Gains,
+    pub eq_selected: usize,
+    /// Name of the matching built-in preset, or "Custom" after a manual
+    /// band edit that no longer matches any preset exactly.
+    pub eq_preset: String,
+    /// Set on every band/preset edit; `poll_eq` debounces off this so a
+    /// burst of Up/Down presses sends one `af set` to mpv, not one per key
+    /// (each replace risks a small audible blip — see `MpvPlayer::set_eq`).
+    eq_last_edit: Option<Instant>,
+    eq_applied_gains: eq::Gains,
+    eq_saved_gains: eq::Gains,
+
     pub playlists: Vec<Playlist>,
     pub selected_playlist: usize,
     pub playlist_tracks: Vec<UnifiedTrack>,
@@ -442,6 +456,12 @@ impl App {
             shuffle: false,
             palette: AccentPalette::Auto,
             tick: 0,
+            eq_gains: eq::FLAT,
+            eq_selected: 0,
+            eq_preset: "Flat".to_string(),
+            eq_last_edit: None,
+            eq_applied_gains: eq::FLAT,
+            eq_saved_gains: eq::FLAT,
             playlists: Vec::new(),
             selected_playlist: 0,
             playlist_tracks: Vec::new(),
@@ -467,6 +487,20 @@ impl App {
 
         app.player.start().await?;
         app.player.set_volume(app.volume).await?;
+
+        let eq_gains = eq::gains_from_slice(&app.config.eq.gains);
+        // Flat is mpv's default (empty `af` chain) — skip sending a no-op
+        // filter chain on every startup.
+        if eq_gains != eq::FLAT {
+            app.player.set_eq(eq_gains).await?;
+        }
+        app.eq_gains = eq_gains;
+        app.eq_applied_gains = eq_gains;
+        app.eq_saved_gains = eq_gains;
+        app.eq_preset = eq::matching_preset(&eq_gains)
+            .unwrap_or("Custom")
+            .to_string();
+
         app.load_playlists()?;
         app.load_queue();
 
@@ -1363,6 +1397,79 @@ impl App {
     /// the status-bar spinner alongside `soundcloud_loading`.
     pub fn scan_in_progress(&self) -> bool {
         self.scan_handle.is_some()
+    }
+
+    pub fn eq_select_previous(&mut self) {
+        self.eq_selected = self
+            .eq_selected
+            .checked_sub(1)
+            .unwrap_or(eq::BAND_COUNT - 1);
+    }
+
+    pub fn eq_select_next(&mut self) {
+        self.eq_selected = (self.eq_selected + 1) % eq::BAND_COUNT;
+    }
+
+    /// Adjust the selected band's gain by `delta` dB, clamped to
+    /// `eq::MAX_GAIN_DB`. Marks the EQ dirty for `poll_eq` to pick up —
+    /// the actual `af set` call is debounced, not sent here, so holding
+    /// Up/Down doesn't spam mpv with one filter-chain replace per keypress.
+    pub fn eq_adjust_selected(&mut self, delta: f64) {
+        let gain = &mut self.eq_gains[self.eq_selected];
+        *gain = (*gain + delta).clamp(-eq::MAX_GAIN_DB, eq::MAX_GAIN_DB);
+        self.eq_preset = eq::matching_preset(&self.eq_gains)
+            .unwrap_or("Custom")
+            .to_string();
+        self.eq_last_edit = Some(Instant::now());
+    }
+
+    /// Cycle to the next/previous built-in preset. Starting from "Custom"
+    /// (no exact match) wraps in from the first preset ("Flat").
+    pub fn eq_cycle_preset(&mut self, forward: bool) {
+        let current = eq::PRESETS
+            .iter()
+            .position(|p| p.name == self.eq_preset)
+            .unwrap_or(0);
+        let len = eq::PRESETS.len();
+        let next = if forward {
+            (current + 1) % len
+        } else {
+            (current + len - 1) % len
+        };
+        let preset = &eq::PRESETS[next];
+        self.eq_gains = preset.gains;
+        self.eq_preset = preset.name.to_string();
+        self.eq_last_edit = Some(Instant::now());
+        self.status_message = format!("EQ preset: {}", preset.name);
+    }
+
+    /// Debounced EQ apply/persist, called every tick. Two separate debounce
+    /// windows off the same edit timestamp: mpv gets the new filter chain
+    /// quickly (still slow enough to coalesce a burst of keypresses into one
+    /// `af set`), while config.toml is written less eagerly since disk I/O
+    /// doesn't need to track the UI in real time.
+    pub async fn poll_eq(&mut self) {
+        const APPLY_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
+        const SAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(800);
+
+        let Some(last_edit) = self.eq_last_edit else {
+            return;
+        };
+        let elapsed = last_edit.elapsed();
+
+        if self.eq_gains != self.eq_applied_gains && elapsed >= APPLY_DEBOUNCE {
+            if let Err(e) = self.player.set_eq(self.eq_gains).await {
+                self.status_message = format!("EQ error: {}", e.friendly());
+            }
+            self.eq_applied_gains = self.eq_gains;
+        }
+
+        if self.eq_gains != self.eq_saved_gains && elapsed >= SAVE_DEBOUNCE {
+            self.config.eq.gains = self.eq_gains.to_vec();
+            self.config.eq.preset = self.eq_preset.clone();
+            let _ = self.config.save();
+            self.eq_saved_gains = self.eq_gains;
+        }
     }
 
     pub async fn volume_up(&mut self) -> Result<()> {

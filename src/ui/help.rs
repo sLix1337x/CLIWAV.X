@@ -5,10 +5,13 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 const BINDINGS: &[(&str, &str)] = &[
-    ("1  2  3  4  5  6", "Jump to Dashboard / Now Playing / Library / Queue / SoundCloud / Search"),
+    ("1  2  3  4  5  6  7", "Jump to Dashboard / Now Playing / Library / Queue / SoundCloud / EQ / Search"),
     ("Tab / Shift+Tab", "Switch tabs (Dashboard: toggle pane; Search: toggle typing/browsing; Library & SoundCloud: toggle pane)"),
     ("Up/Down, k/j", "Navigate list"),
     ("Left/Right (Dashboard)", "Switch Search / Tracks / Likes / Reposts / Library"),
+    ("Left/Right (EQ)", "Select band"),
+    ("Up/Down (EQ)", "Adjust selected band's gain"),
+    ("[ / ] (EQ)", "Cycle built-in EQ presets"),
     ("Shift+Left/Right", "Rewind / fast-forward the current track (5s)"),
     ("Enter (Search, typing)", "Run search, then switch to browsing results"),
     ("Enter (elsewhere)", "Play selected track, drill into a SoundCloud category, or open Library"),

@@ -1,4 +1,5 @@
 use crate::error::{ClimusicError, Result};
+use crate::player::eq;
 use serde_json::{json, Value};
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,6 +19,10 @@ pub struct MpvPlayer {
     /// Run mpv's WASAPI output in exclusive mode (bit-perfect local
     /// playback, bypasses the Windows mixer) — see `PlayerConfig::audio_exclusive`.
     audio_exclusive: bool,
+    /// Last-applied 10-band EQ gains, re-sent after a mid-session mpv
+    /// restart the same way `volume`/`loop_file` are — a respawned mpv
+    /// starts with an empty `af` chain otherwise.
+    eq_gains: Option<eq::Gains>,
 }
 
 impl MpvPlayer {
@@ -36,6 +41,7 @@ impl MpvPlayer {
             volume: None,
             loop_file: None,
             audio_exclusive,
+            eq_gains: None,
         }
     }
 
@@ -166,6 +172,13 @@ impl MpvPlayer {
             )
             .await?;
         }
+        if let Some(gains) = self.eq_gains {
+            send_and_read(
+                json!({"command": ["af", "set", eq::build_af_graph(&gains)]}),
+                &self.pipe_path,
+            )
+            .await?;
+        }
         Ok(())
     }
 
@@ -250,6 +263,22 @@ impl MpvPlayer {
         let value = if on { json!("inf") } else { json!("no") };
         self.set_property("loop-file", value).await?;
         self.loop_file = Some(on);
+        Ok(())
+    }
+
+    /// Apply the full 10-band EQ chain in one go. Uses `af set` (a wholesale
+    /// filter-chain replace) rather than adding the filter once and sending
+    /// incremental `af-command` deltas per band: empirically, `af-command`
+    /// does not work reliably against this filter (tested against a live
+    /// mpv v0.41 instance — it fails even for textbook runtime-commandable
+    /// ffmpeg filters like `volume`'s own `volume` command, regardless of
+    /// `target` glob). A full `af set` replace does work, but it can trigger
+    /// a `playback-restart` event (i.e. a very small audible blip) — callers
+    /// should debounce band edits rather than calling this per-keystroke.
+    pub async fn set_eq(&mut self, gains: eq::Gains) -> Result<()> {
+        self.command(json!({"command": ["af", "set", eq::build_af_graph(&gains)]}))
+            .await?;
+        self.eq_gains = Some(gains);
         Ok(())
     }
 

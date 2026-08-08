@@ -114,6 +114,7 @@ async fn run_event_loop(
             app.poll_search();
             app.poll_artwork();
             app.poll_waveform();
+            app.poll_eq().await;
             app.maybe_save_queue();
             last_tick = Instant::now();
         }
@@ -213,7 +214,8 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
                     Tab::NowPlaying => Tab::Library,
                     Tab::Library => Tab::Queue,
                     Tab::Queue => Tab::SoundCloud,
-                    Tab::SoundCloud => Tab::Search,
+                    Tab::SoundCloud => Tab::Eq,
+                    Tab::Eq => Tab::Search,
                     Tab::Search => Tab::Dashboard,
                 };
             }
@@ -225,7 +227,8 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
                 Tab::Library => Tab::NowPlaying,
                 Tab::Queue => Tab::Library,
                 Tab::SoundCloud => Tab::Queue,
-                Tab::Search => Tab::SoundCloud,
+                Tab::Eq => Tab::SoundCloud,
+                Tab::Search => Tab::Eq,
             };
             if matches!(app.current_tab, Tab::Search) {
                 app.search_focus = SearchFocus::Input;
@@ -233,7 +236,7 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
         }
 
         // Jump order matches the tab bar: Dashboard, Now Playing, Library,
-        // Queue, SoundCloud, Search.
+        // Queue, SoundCloud, EQ, Search.
         KeyCode::Char('1') => app.current_tab = Tab::Dashboard,
         KeyCode::Char('2') => app.current_tab = Tab::NowPlaying,
         KeyCode::Char('3') => app.current_tab = Tab::Library,
@@ -243,6 +246,16 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
             app.current_tab = Tab::Search;
             app.search_focus = SearchFocus::Input;
         }
+        KeyCode::Char('7') => app.current_tab = Tab::Eq,
+
+        // EQ tab: arrows drive band selection/gain instead of list
+        // navigation, and [ / ] cycle built-in presets.
+        KeyCode::Left if matches!(app.current_tab, Tab::Eq) => app.eq_select_previous(),
+        KeyCode::Right if matches!(app.current_tab, Tab::Eq) => app.eq_select_next(),
+        KeyCode::Down if matches!(app.current_tab, Tab::Eq) => app.eq_adjust_selected(-0.5),
+        KeyCode::Up if matches!(app.current_tab, Tab::Eq) => app.eq_adjust_selected(0.5),
+        KeyCode::Char('[') if matches!(app.current_tab, Tab::Eq) => app.eq_cycle_preset(false),
+        KeyCode::Char(']') if matches!(app.current_tab, Tab::Eq) => app.eq_cycle_preset(true),
 
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_previous(),

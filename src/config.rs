@@ -20,6 +20,14 @@ fn default_volume() -> u8 {
     80
 }
 
+fn default_eq_gains() -> Vec<f64> {
+    vec![0.0; 10]
+}
+
+fn default_eq_preset() -> String {
+    "Flat".to_string()
+}
+
 // Every section and field carries a serde default so a partial or
 // hand-edited config.toml (e.g. from an older version, or with a section
 // deleted) loads with sensible defaults instead of refusing to start.
@@ -33,6 +41,8 @@ pub struct Config {
     pub soundcloud: SoundCloudConfig,
     #[serde(default)]
     pub player: PlayerConfig,
+    #[serde(default)]
+    pub eq: EqConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +94,29 @@ pub struct PlayerConfig {
     /// on track/device changes.
     #[serde(default)]
     pub audio_exclusive: bool,
+}
+
+/// 10-band EQ state, persisted so it survives a restart. `gains` is a `Vec`
+/// (not a fixed-size array) purely so a malformed/older config.toml — wrong
+/// length, or missing entirely — falls back to flat instead of failing to
+/// parse; `App` converts it to `eq::Gains` on load and clamps/pads as needed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EqConfig {
+    #[serde(default = "default_eq_gains")]
+    pub gains: Vec<f64>,
+    /// Name of the matching built-in preset, or "Custom" after a manual
+    /// band edit that no longer matches any preset exactly.
+    #[serde(default = "default_eq_preset")]
+    pub preset: String,
+}
+
+impl Default for EqConfig {
+    fn default() -> Self {
+        Self {
+            gains: default_eq_gains(),
+            preset: default_eq_preset(),
+        }
+    }
 }
 
 impl Default for PlayerConfig {
@@ -181,6 +214,17 @@ mod tests {
         assert_eq!(cfg.player.yt_dlp_path, "yt-dlp");
         assert_eq!(cfg.player.volume, 80);
         assert!(!cfg.player.audio_exclusive);
+        assert_eq!(cfg.eq.gains, vec![0.0; 10]);
+        assert_eq!(cfg.eq.preset, "Flat");
+    }
+
+    /// An `[eq]` section with only a preset name (e.g. hand-edited) still
+    /// fills in flat gains rather than failing to parse.
+    #[test]
+    fn partial_eq_section_fills_missing_gains() {
+        let cfg: Config = toml::from_str("[eq]\npreset = \"Bass Boost\"\n").unwrap();
+        assert_eq!(cfg.eq.preset, "Bass Boost");
+        assert_eq!(cfg.eq.gains, vec![0.0; 10]);
     }
 
     /// A section present but with keys missing fills just those keys.

@@ -1,4 +1,5 @@
 pub mod dashboard;
+pub mod eq;
 pub mod help;
 pub mod library;
 pub mod player;
@@ -39,6 +40,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Tab::Library => draw_library(frame, app, chunks[2]),
         Tab::SoundCloud => soundcloud::draw(frame, app, chunks[2]),
         Tab::NowPlaying => player::draw(frame, app, chunks[2]),
+        Tab::Eq => eq::draw(frame, app, chunks[2]),
     }
 
     draw_divider(frame, chunks[3]);
@@ -69,7 +71,7 @@ fn draw_divider(frame: &mut Frame, area: Rect) {
 }
 
 fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
-    let titles: Vec<Line> = ["Dashboard", "Now Playing", "Library", "Queue", "SoundCloud", "Search"]
+    let titles: Vec<Line> = ["Dashboard", "Now Playing", "Library", "Queue", "SoundCloud", "EQ", "Search"]
         .iter()
         .map(|t| Line::from(Span::raw(format!(" {t} "))))
         .collect();
@@ -376,7 +378,8 @@ fn current_tab_index(tab: &Tab) -> usize {
         Tab::Library => 2,
         Tab::Queue => 3,
         Tab::SoundCloud => 4,
-        Tab::Search => 5,
+        Tab::Eq => 5,
+        Tab::Search => 6,
     }
 }
 
