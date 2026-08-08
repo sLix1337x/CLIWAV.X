@@ -6,6 +6,7 @@ pub mod player;
 pub mod queue;
 pub mod search;
 pub mod soundcloud;
+pub mod theme;
 pub mod visualizer;
 pub mod waveform;
 
@@ -14,7 +15,7 @@ use crate::sources::{TrackSource, UnifiedTrack};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Tabs};
+use ratatui::widgets::{Paragraph, Tabs};
 use ratatui::Frame;
 
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -79,16 +80,12 @@ fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
 
     let tabs = Tabs::new(titles)
         .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Rgb(60, 90, 110)))
-                .title(Line::from(gradient_spans(
-                    " ♫ CLIWAV.X ",
-                    (80, 220, 220),
-                    (190, 130, 255),
-                    true,
-                ))),
+            theme::panel_border(Color::Rgb(60, 90, 110)).title(Line::from(gradient_spans(
+                " ♫ CLIWAV.X ",
+                (80, 220, 220),
+                (190, 130, 255),
+                true,
+            ))),
         )
         .select(current_tab_index(&app.current_tab))
         .style(Style::default().fg(Color::Gray))
@@ -156,9 +153,94 @@ pub fn gradient_meter_spans(percent: u8, width: usize, accent: Color) -> Vec<Spa
     spans
 }
 
+/// Interpolates between two colors through HSL space rather than raw RGB.
+/// A straight per-channel RGB lerp between two saturated colors (e.g. cyan
+/// to magenta) dips through a muddy, desaturated grey partway through and
+/// steps unevenly in perceived brightness; going via hue/saturation/
+/// lightness keeps the gradient looking like one continuous, evenly-lit
+/// color ramp instead. Hue interpolates the short way around the color
+/// wheel (never more than 180°), and an achromatic endpoint (grey — where
+/// hue is undefined) borrows the other endpoint's hue instead of swinging
+/// through an arbitrary one.
 pub fn lerp_rgb(from: (u8, u8, u8), to: (u8, u8, u8), t: f32) -> Color {
-    let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
-    Color::Rgb(lerp(from.0, to.0), lerp(from.1, to.1), lerp(from.2, to.2))
+    let t = t.clamp(0.0, 1.0);
+    let (mut h1, s1, l1) = rgb_to_hsl(from);
+    let (mut h2, s2, l2) = rgb_to_hsl(to);
+    if s1 < 0.001 {
+        h1 = h2;
+    }
+    if s2 < 0.001 {
+        h2 = h1;
+    }
+    let mut dh = h2 - h1;
+    if dh > 180.0 {
+        dh -= 360.0;
+    } else if dh < -180.0 {
+        dh += 360.0;
+    }
+    let h = h1 + dh * t;
+    let s = s1 + (s2 - s1) * t;
+    let l = l1 + (l2 - l1) * t;
+    let (r, g, b) = hsl_to_rgb(h, s, l);
+    Color::Rgb(r, g, b)
+}
+
+/// RGB (0-255 per channel) to HSL (hue in degrees 0-360, saturation and
+/// lightness both 0.0-1.0). Standard conversion, no crate needed for
+/// something this small.
+fn rgb_to_hsl((r, g, b): (u8, u8, u8)) -> (f32, f32, f32) {
+    let rf = r as f32 / 255.0;
+    let gf = g as f32 / 255.0;
+    let bf = b as f32 / 255.0;
+    let max = rf.max(gf).max(bf);
+    let min = rf.min(gf).min(bf);
+    let l = (max + min) / 2.0;
+    let delta = max - min;
+    if delta < f32::EPSILON {
+        return (0.0, 0.0, l);
+    }
+    let s = if l > 0.5 {
+        delta / (2.0 - max - min)
+    } else {
+        delta / (max + min)
+    };
+    let h = if max == rf {
+        ((gf - bf) / delta).rem_euclid(6.0)
+    } else if max == gf {
+        (bf - rf) / delta + 2.0
+    } else {
+        (rf - gf) / delta + 4.0
+    };
+    (h * 60.0, s, l)
+}
+
+/// HSL back to RGB (0-255 per channel).
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
+    if s <= 0.0 {
+        let v = (l.clamp(0.0, 1.0) * 255.0).round() as u8;
+        return (v, v, v);
+    }
+    let h = h.rem_euclid(360.0) / 360.0;
+    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let p = 2.0 * l - q;
+    let hue_to_rgb = |p: f32, q: f32, t: f32| {
+        let t = t.rem_euclid(1.0);
+        if t < 1.0 / 6.0 {
+            p + (q - p) * 6.0 * t
+        } else if t < 1.0 / 2.0 {
+            q
+        } else if t < 2.0 / 3.0 {
+            p + (q - p) * (2.0 / 3.0 - t) * 6.0
+        } else {
+            p
+        }
+    };
+    let to_byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    (
+        to_byte(hue_to_rgb(p, q, h + 1.0 / 3.0)),
+        to_byte(hue_to_rgb(p, q, h)),
+        to_byte(hue_to_rgb(p, q, h - 1.0 / 3.0)),
+    )
 }
 
 /// Mix `rgb` toward white by `amount` (0.0–1.0).
@@ -296,7 +378,7 @@ pub fn is_now_playing(app: &App, track: &UnifiedTrack) -> bool {
 /// cursor/selection happens to be.
 pub fn track_name_spans<'a>(artist: &'a str, title: &'a str, playing: bool, accent: Color) -> Vec<Span<'a>> {
     if playing {
-        let style = Style::default().fg(accent).add_modifier(Modifier::BOLD);
+        let style = theme::accent_bold(accent);
         return if artist.is_empty() {
             vec![Span::styled("▶ ", style), Span::styled(title, style)]
         } else {
@@ -422,15 +504,68 @@ fn draw_prompt(frame: &mut Frame, prompt: &InputPrompt) {
         popup_area,
     );
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            prompt.title.clone(),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ))
+    let block = theme::panel_border(Color::Cyan)
+        .title(Span::styled(prompt.title.clone(), theme::accent_bold(Color::Cyan)))
         .style(Style::default().bg(Color::Black).fg(Color::White));
     let para = Paragraph::new(format!("{}▏", prompt.value)).block(block);
     frame.render_widget(para, popup_area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn as_rgb(c: Color) -> (u8, u8, u8) {
+        match c {
+            Color::Rgb(r, g, b) => (r, g, b),
+            _ => panic!("expected Color::Rgb, got {c:?}"),
+        }
+    }
+
+    #[test]
+    fn lerp_rgb_endpoints_are_exact() {
+        let from = (10, 20, 30);
+        let to = (200, 100, 50);
+        assert_eq!(as_rgb(lerp_rgb(from, to, 0.0)), from);
+        assert_eq!(as_rgb(lerp_rgb(from, to, 1.0)), to);
+    }
+
+    #[test]
+    fn lerp_rgb_midpoint_does_not_dip_through_grey() {
+        // Cyan -> magenta: a straight RGB lerp passes through a desaturated
+        // grey-ish color at t=0.5 (roughly equal R/G/B). Going via HSL
+        // should stay clearly saturated instead.
+        let cyan = (0u8, 255u8, 255u8);
+        let magenta = (255u8, 0u8, 255u8);
+        let (r, g, b) = as_rgb(lerp_rgb(cyan, magenta, 0.5));
+        let max = r.max(g).max(b) as i32;
+        let min = r.min(g).min(b) as i32;
+        assert!(
+            max - min > 100,
+            "expected a clearly saturated midpoint color, got ({r}, {g}, {b})"
+        );
+    }
+
+    #[test]
+    fn lerp_rgb_handles_grey_endpoint_without_panicking() {
+        let grey = (128, 128, 128);
+        let teal = (32, 178, 170);
+        // Just needs to not panic and stay in range; grey has no hue of its
+        // own, so this exercises the "borrow the other endpoint's hue" path.
+        let _ = lerp_rgb(grey, teal, 0.3);
+        let _ = lerp_rgb(teal, grey, 0.7);
+    }
+
+    #[test]
+    fn hsl_roundtrip_is_close_to_identity() {
+        for rgb in [(0, 0, 0), (255, 255, 255), (200, 50, 10), (12, 240, 90), (128, 128, 128)] {
+            let (h, s, l) = rgb_to_hsl(rgb);
+            let (r, g, b) = hsl_to_rgb(h, s, l);
+            let close = |a: u8, b: u8| (a as i32 - b as i32).abs() <= 1;
+            assert!(
+                close(r, rgb.0) && close(g, rgb.1) && close(b, rgb.2),
+                "roundtrip mismatch: {rgb:?} -> hsl({h}, {s}, {l}) -> ({r}, {g}, {b})"
+            );
+        }
+    }
 }

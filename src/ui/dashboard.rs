@@ -5,7 +5,7 @@ use crate::ui::{
     zebra_style,
 };
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
@@ -70,7 +70,7 @@ fn draw_soundcloud(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled("◂ ", muted_style()),
             Span::styled(
                 genre,
-                Style::default().fg(accent).add_modifier(Modifier::BOLD),
+                crate::ui::theme::accent_bold(accent),
             ),
             Span::styled(" ▸", muted_style()),
         ]
@@ -79,7 +79,7 @@ fn draw_soundcloud(frame: &mut Frame, app: &App, area: Rect) {
         let mut spans = vec![Span::styled("◂ ", muted_style())];
         for (i, label) in labels.iter().enumerate() {
             let style = if i == app.dashboard_sc_category_selected {
-                Style::default().fg(accent).add_modifier(Modifier::BOLD)
+                crate::ui::theme::accent_bold(accent)
             } else {
                 muted_style()
             };

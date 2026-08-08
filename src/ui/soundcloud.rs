@@ -106,7 +106,7 @@ fn draw_categories(frame: &mut Frame, app: &App, area: Rect) {
         .map(|category| {
             let is_playing = Some(*category) == playing_category;
             let (marker, style) = if is_playing {
-                ("▶ ", Style::default().fg(accent).add_modifier(Modifier::BOLD))
+                ("▶ ", crate::ui::theme::accent_bold(accent))
             } else {
                 ("› ", normal_style())
             };

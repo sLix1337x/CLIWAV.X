@@ -8,7 +8,7 @@ use image::DynamicImage;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Padding, Paragraph};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 use ratatui::Frame;
 use ratatui_image::{Image, Resize};
 
@@ -614,12 +614,7 @@ pub fn draw_controls(frame: &mut Frame, app: &App, area: Rect) {
     ));
 
     let para = Paragraph::new(vec![line, hint])
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(accent)),
-        )
+        .block(crate::ui::theme::panel_border(accent))
         .alignment(Alignment::Center);
     frame.render_widget(para, area);
 }

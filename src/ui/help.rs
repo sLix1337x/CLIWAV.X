@@ -1,7 +1,7 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
+use ratatui::widgets::{Clear, Paragraph};
 use ratatui::Frame;
 
 const BINDINGS: &[(&str, &str)] = &[
@@ -73,14 +73,8 @@ pub fn draw(frame: &mut Frame) {
         Style::default().fg(Color::Gray),
     )));
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(Span::styled(
-            " Keybindings ",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ))
+    let block = crate::ui::theme::panel_border(Color::Cyan)
+        .title(Span::styled(" Keybindings ", crate::ui::theme::accent_bold(Color::Cyan)))
         .style(Style::default().bg(Color::Black));
     let para = Paragraph::new(lines).block(block);
     frame.render_widget(para, popup_area);

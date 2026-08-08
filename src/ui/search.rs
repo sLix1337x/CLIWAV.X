@@ -3,7 +3,7 @@ use crate::ui::{accent_color, draw_section, highlight_style, is_now_playing, mut
 use ratatui::layout::{Constraint, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
@@ -27,19 +27,10 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         app.search_query.clone()
     };
+    let input_border_color = if input_focused { Color::Cyan } else { Color::Gray };
     let input = Paragraph::new(query_text)
         .style(Style::default().fg(Color::Yellow))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(if input_focused {
-                    Style::default().fg(Color::Cyan)
-                } else {
-                    Style::default().fg(Color::Gray)
-                })
-                .title(header),
-        );
+        .block(crate::ui::theme::panel_border(input_border_color).title(header));
     frame.render_widget(input, chunks[0]);
 
     let results_area = draw_section(
