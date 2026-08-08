@@ -131,6 +131,12 @@ impl YouTubeSource {
         let mut cmd = self.base_command();
         cmd.args([
             "--no-update",
+            // Bitrate ranks below language/codec preference in yt-dlp's
+            // default format sort, so "bestaudio" alone can pick a lower-kbps
+            // stream over a higher-kbps one of a less-preferred codec.
+            // Putting abr first guarantees the highest-bitrate stream wins.
+            "-S",
+            "abr",
             "-f",
             "bestaudio",
             "--get-url",

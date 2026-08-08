@@ -76,6 +76,14 @@ pub struct PlayerConfig {
     /// private Likes and subscriber/region-gated tracks resolve. Empty = off.
     #[serde(default)]
     pub cookies_from_browser: String,
+    /// Run mpv's WASAPI output in exclusive mode, bypassing the Windows
+    /// audio mixer so local lossless files play bit-perfect at their native
+    /// sample rate instead of being resampled to the mixer's shared format.
+    /// Off by default: exclusive mode takes over the audio device, muting
+    /// every other app's sound while a track plays, and can click briefly
+    /// on track/device changes.
+    #[serde(default)]
+    pub audio_exclusive: bool,
 }
 
 impl Default for PlayerConfig {
@@ -85,6 +93,7 @@ impl Default for PlayerConfig {
             yt_dlp_path: default_yt_dlp_path(),
             volume: default_volume(),
             cookies_from_browser: String::new(),
+            audio_exclusive: false,
         }
     }
 }
@@ -171,6 +180,7 @@ mod tests {
         assert_eq!(cfg.player.mpv_path, "mpv");
         assert_eq!(cfg.player.yt_dlp_path, "yt-dlp");
         assert_eq!(cfg.player.volume, 80);
+        assert!(!cfg.player.audio_exclusive);
     }
 
     /// A section present but with keys missing fills just those keys.

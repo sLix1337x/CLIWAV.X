@@ -321,7 +321,7 @@ impl App {
     pub async fn new() -> Result<Self> {
         let config = Config::load()?;
         let db = Database::open(Config::db_path()?)?;
-        let player = MpvPlayer::new(&config.player.mpv_path);
+        let player = MpvPlayer::new(&config.player.mpv_path, config.player.audio_exclusive);
         let youtube = YouTubeSource::new(
             &config.player.yt_dlp_path,
             &config.player.cookies_from_browser,

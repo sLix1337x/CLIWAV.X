@@ -177,7 +177,25 @@ username = "your-soundcloud-username"
 mpv_path = "mpv"
 yt_dlp_path = "yt-dlp"
 volume = 80
+audio_exclusive = false
 ```
+
+## Audio quality
+
+YouTube and SoundCloud streams are resolved via `yt-dlp` with an explicit
+bitrate-first format sort, so CLIWAV.X always picks the highest-kbps audio
+stream the source actually offers (which is capped by what YouTube/SoundCloud
+publish — typically ~128-160kbps AAC/Opus for free-tier streams; this can't
+exceed that).
+
+Local files already play bit-perfect by default — nothing in CLIWAV.X
+transcodes or resamples them. On Windows, mpv's default WASAPI *shared*-mode
+output goes through the OS mixer, which can still resample everything to one
+fixed format. Set `audio_exclusive = true` in `config.toml` to run mpv in
+WASAPI *exclusive* mode instead, bypassing the mixer so lossless local files
+(FLAC, etc.) play at their true native sample rate. Trade-off: exclusive mode
+takes over the audio device, muting every other app's sound while a track
+plays, and can click briefly on track/device changes — so it's off by default.
 
 ## Architecture
 

@@ -15,10 +15,13 @@ pub struct MpvPlayer {
     /// mpv to loop internally in that mode).
     volume: Option<u8>,
     loop_file: Option<bool>,
+    /// Run mpv's WASAPI output in exclusive mode (bit-perfect local
+    /// playback, bypasses the Windows mixer) — see `PlayerConfig::audio_exclusive`.
+    audio_exclusive: bool,
 }
 
 impl MpvPlayer {
-    pub fn new(mpv_path: impl Into<String>) -> Self {
+    pub fn new(mpv_path: impl Into<String>, audio_exclusive: bool) -> Self {
         let mpv_path = mpv_path.into();
         let pid = std::process::id();
         let ts = SystemTime::now()
@@ -32,6 +35,7 @@ impl MpvPlayer {
             child: None,
             volume: None,
             loop_file: None,
+            audio_exclusive,
         }
     }
 
@@ -47,26 +51,33 @@ impl MpvPlayer {
         // the machine here, including ones the user had open for other
         // purposes.)
         let ipc_arg = format!("--input-ipc-server={}", self.pipe_path);
-        let mut cmd = Command::new(&self.mpv_path);
-        cmd.args([
-            "--no-video",
-            "--idle",
+        let mut args = vec![
+            "--no-video".to_string(),
+            "--idle".to_string(),
             // Without this, mpv unloads the file at end-of-track and every
             // playback property (eof-reached, time-pos, ...) becomes
             // "property unavailable" — which is what made autoplay-on-EOF
             // impossible to detect. keep-open pauses on the finished file
             // instead, leaving eof-reached=true readable.
-            "--keep-open=yes",
+            "--keep-open=yes".to_string(),
             // mpv pushes its title to the Windows audio session / volume
             // mixer — the default title is the raw media URL, which for a
             // signed CDN stream is a wall of query parameters. Pin it to
             // the app name instead.
-            "--title=CLIWAV.X",
-            &ipc_arg,
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+            "--title=CLIWAV.X".to_string(),
+            ipc_arg,
+        ];
+        if self.audio_exclusive {
+            // WASAPI exclusive mode bypasses the Windows audio mixer, so
+            // local lossless files play at their true native sample rate
+            // instead of being resampled to the mixer's shared format.
+            args.push("--audio-exclusive=yes".to_string());
+        }
+        let mut cmd = Command::new(&self.mpv_path);
+        cmd.args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
 
         let mut child = cmd.spawn().map_err(|e| {
             ClimusicError::Player(format!(

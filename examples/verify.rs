@@ -13,7 +13,7 @@ async fn main() -> Result<()> {
     println!("Config path: {:?}", Config::config_path()?);
     let config = Config::load()?;
     println!("mpv_path from config: {}", config.player.mpv_path);
-    let mut player = MpvPlayer::new(&config.player.mpv_path);
+    let mut player = MpvPlayer::new(&config.player.mpv_path, config.player.audio_exclusive);
     println!("Starting mpv...");
     player.start().await?;
     println!("mpv started.");

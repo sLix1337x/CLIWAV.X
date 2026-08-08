@@ -227,6 +227,11 @@ impl SoundCloudSource {
         let mut cmd = self.base_command();
         cmd.args([
             "--no-update",
+            // See the matching comment in sources/youtube.rs: this forces
+            // yt-dlp to prefer the highest-bitrate audio stream over its
+            // default codec/language-first tie-breaking.
+            "-S",
+            "abr",
             "-f",
             "bestaudio",
             "--get-url",
