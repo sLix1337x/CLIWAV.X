@@ -86,6 +86,15 @@ impl MpvPlayer {
             ))
         })?;
 
+        // Closing a terminal tab/window kills cliwavx.exe abruptly (no
+        // Drop, no graceful shutdown), which used to leave mpv running —
+        // and playing — as an orphaned process. Binding it to a
+        // kill-on-close job object makes Windows tear it down as soon as
+        // our own process handle closes, by any means (normal exit, panic,
+        // or the terminal force-killing us).
+        #[cfg(windows)]
+        job::kill_with_current_process(&child);
+
         // Wait for the IPC pipe to actually appear instead of a fixed sleep —
         // a flat 500ms both wasted time on fast machines and raced ahead of
         // mpv on slow ones (the first command then failed with
@@ -422,6 +431,70 @@ async fn read_response<R: tokio::io::AsyncBufRead + Unpin>(reader: &mut R) -> Re
                 return Err(ClimusicError::Player(format!("mpv error: {line}")));
             }
             return Ok(value);
+        }
+    }
+}
+
+/// Ties mpv's lifetime to ours via a Windows job object, so it can't outlive
+/// cliwavx.exe as an orphaned, still-playing process — which is what used to
+/// happen when a terminal tab/window was closed: Windows kills the console
+/// process abruptly (no unwinding, `Drop for MpvPlayer` never runs), but a
+/// plain child process has no OS-level link to its parent and just keeps
+/// running. A job object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` fixes that
+/// at the kernel level: Windows closes our handle to the job the moment our
+/// process ends, by any means, and that closure kills every process still
+/// assigned to it.
+#[cfg(windows)]
+mod job {
+    use std::sync::OnceLock;
+    use tokio::process::Child;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    // The handle is intentionally never closed: it must stay open for the
+    // life of the process so Windows only reclaims it (triggering the kill)
+    // when cliwavx.exe itself exits. Stored as `isize` rather than `HANDLE`
+    // (`*mut c_void`) purely so the `OnceLock` is `Send + Sync`.
+    static KILL_ON_CLOSE_JOB: OnceLock<isize> = OnceLock::new();
+
+    /// Best-effort: on any failure this silently leaves mpv unprotected
+    /// rather than blocking playback over what's ultimately a cleanup nicety.
+    pub fn kill_with_current_process(child: &Child) {
+        let job = *KILL_ON_CLOSE_JOB.get_or_init(create_kill_on_close_job);
+        let Some(process) = child.raw_handle() else {
+            return; // already exited before we could protect it
+        };
+        if job == 0 {
+            return;
+        }
+        unsafe {
+            let _ = AssignProcessToJobObject(job as HANDLE, process as HANDLE);
+        }
+    }
+
+    /// Returns 0 (null) on failure, matched by callers instead of unwrapping.
+    fn create_kill_on_close_job() -> isize {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                return 0;
+            }
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if ok == 0 {
+                return 0;
+            }
+            job as isize
         }
     }
 }
