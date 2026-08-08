@@ -29,6 +29,7 @@ const BINDINGS: &[(&str, &str)] = &[
     ("l", "Cycle repeat mode (Off -> Track -> All)"),
     ("x", "Toggle shuffle"),
     ("t", "Cycle accent palette (auto from artwork, teal, magenta, amber, violet)"),
+    ("v", "Toggle the live spectrum visualizer (Now Playing tab, replaces the waveform while on)"),
     ("m (SoundCloud/Dashboard)", "Load the next page of Tracks/Likes/Reposts"),
     ("S", "Set up Spotify credentials"),
     ("C", "Set your SoundCloud username"),

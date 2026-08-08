@@ -8,6 +8,10 @@
 //! failure — unsupported codec, corrupt data, I/O error — so callers can
 //! fall back to the plain progress bar without special-casing errors.
 
+#[cfg(windows)]
+pub mod capture;
+pub mod spectrum;
+
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};

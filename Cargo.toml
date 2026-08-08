@@ -86,7 +86,11 @@ color-thief = "0.2"
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "ogg", "vorbis", "flac", "wav"] }
 
 # Job-object binding so mpv can't outlive an abruptly-killed cliwavx.exe
-# (e.g. a closed terminal tab) as an orphaned, still-playing process.
+# (e.g. a closed terminal tab) as an orphaned, still-playing process. Also
+# where the visualizer's WASAPI loopback capture + FFT deps live, since both
+# are Windows-only (playback goes through mpv as a separate process, so we
+# can't tap its samples directly — capturing system audio output ourselves
+# is the only way to get real PCM for a spectrum visualizer).
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
@@ -94,3 +98,5 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_JobObjects",
     "Win32_System_Threading",
 ] }
+wasapi = "0.23"
+rustfft = "6.4"

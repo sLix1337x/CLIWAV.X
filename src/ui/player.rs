@@ -226,12 +226,13 @@ fn draw_waveform_band(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
         0.0
     };
 
-    match &app.waveform {
-        Some(samples) => {
+    match (app.visualizer_on, &app.waveform) {
+        (true, _) => crate::ui::visualizer::draw(frame, app, bars_area, accent),
+        (false, Some(samples)) => {
             let lines = waveform::render(samples, bars_area.width, bars_area.height, progress_ratio, accent);
             frame.render_widget(Paragraph::new(lines), bars_area);
         }
-        None => {
+        (false, None) => {
             // Fallback: today's flat bar, a single row centered in the
             // band's vertical space so it doesn't look stranded at the top.
             let progress_pct = (progress_ratio * 100.0) as u8;
@@ -608,7 +609,7 @@ pub fn draw_controls(frame: &mut Frame, app: &App, area: Rect) {
     let line = Line::from(spans);
 
     let hint = Line::from(Span::styled(
-        "[space] pause  [n] next  [l] repeat  [x] shuffle  [+/-] volume  [t] theme  [?] help  [Q] quit",
+        "[space] pause  [n] next  [l] repeat  [x] shuffle  [+/-] volume  [v] visualizer  [t] theme  [?] help  [Q] quit",
         muted_style(),
     ));
 

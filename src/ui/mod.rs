@@ -6,6 +6,7 @@ pub mod player;
 pub mod queue;
 pub mod search;
 pub mod soundcloud;
+pub mod visualizer;
 pub mod waveform;
 
 use crate::app::{App, InputPrompt, PlaybackState, Tab};

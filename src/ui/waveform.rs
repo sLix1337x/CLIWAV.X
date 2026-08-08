@@ -10,7 +10,10 @@ use ratatui::text::{Line, Span};
 
 const EIGHTHS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-fn eighths_glyph(units: i32) -> char {
+/// Sub-row-precision bar fill glyph for `units` eighths (0-8). Shared with
+/// `ui::visualizer`'s live spectrum bars — same sub-character-height trick,
+/// different data source.
+pub(crate) fn eighths_glyph(units: i32) -> char {
     EIGHTHS[units.clamp(0, 8) as usize]
 }
 

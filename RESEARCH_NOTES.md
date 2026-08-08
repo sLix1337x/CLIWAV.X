@@ -121,7 +121,42 @@ than assuming the syntax above is exactly right.
 
 </details>
 
-## 2. Visualizer
+## 2. Visualizer — IMPLEMENTED (see `src/audio/capture.rs`, `src/audio/spectrum.rs`, `src/ui/visualizer.rs`)
+
+Built essentially as recommended below, with a few simplifications made
+deliberately for v1 rather than discovered as corrections (unlike the EQ,
+nothing here needed empirical correction — verified end-to-end with a
+throwaway `visualizer_check` bin, deleted after use, that started real
+loopback capture against actually-playing audio and confirmed nonzero,
+moving band data):
+
+- **Ring buffer is a plain `Mutex<VecDeque<f32>>`, not a lock-free atomic
+  ring.** The recommendation below suggested an `AtomicUsize` write cursor;
+  in practice, WASAPI loopback capture here isn't a hard-realtime audio
+  render callback (it's a polling/event loop reading already-buffered data,
+  serviced every ~10-200ms), so a short-held mutex lock on write (capture
+  thread) and read (UI thread, ~30 Hz) has no measurable contention risk.
+  Simpler and still fully correct — not worth the extra complexity of
+  hand-rolled atomics for this access pattern.
+- **No separate analysis-rate-vs-render-rate decoupling.** Since v1 ships
+  exactly one visualizer mode (as this doc originally suggested), the tick
+  loop's redraw rate and the FFT analysis rate are simply the same ~30 Hz
+  (`main.rs` drops the tick interval to 33ms while the visualizer is on) —
+  no benefit to decoupling them yet. Worth revisiting if a second mode with
+  different needs (e.g. a raw waveform/oscilloscope mode needing samples
+  every render frame, no FFT at all) gets added later.
+- **24 bars, not "10ish"** — a visual display benefits from more resolution
+  than the unrelated 10-band EQ; the two aren't tied together.
+- Band mapping, fast-attack/slow-decay smoothing, and the silence gate were
+  all implemented independently per the recommendation below (own constants,
+  own affine dB-to-0..1 mapping, not derived from any external source).
+- Toggle key is `v` (Now Playing tab only — replaces the static waveform
+  band while on, since both occupy the same "audio visualization under the
+  info block" role and showing both at once didn't add anything). Off by
+  default, exactly as recommended.
+
+<details>
+<summary>Original recommendation (written before implementation — mostly followed as-is, see notes above for the handful of deliberate simplifications)</summary>
 
 **The core problem**: mpv doesn't expose a clean "give me the current
 spectrum/levels" property over its JSON IPC. Audio-analysis filters like
@@ -187,6 +222,8 @@ between now and any future player change.
   continuous FFT is real, constant background CPU/battery cost that the
   project's own "low overhead, stay out of the way while gaming" positioning
   argues against forcing on unconditionally.
+
+</details>
 
 ## 3. Architecture: message-passing instead of poll-every-tick
 
@@ -278,10 +315,7 @@ right fix is small ratatui-native helpers like `fn split_header_body(area) ->
 ## 5. Suggested priority
 
 1. ~~**EQ first**~~ — **done**, see section 1 above.
-2. **Visualizer second** — bigger lift (new native dependency, a capture
-   thread, an FFT pipeline), but the waveform feature already gave us the
-   Unicode block-rendering building block, and 20–30 Hz analysis + eased
-   rendering keeps it cheap once it exists.
+2. ~~**Visualizer second**~~ — **done**, see section 2 above.
 3. **Message-passing refactor** — worth doing before or alongside the
    visualizer if we want to avoid a fourth (and fifth, ...) `poll_*` method
    piling onto the existing pattern; otherwise fine to defer.

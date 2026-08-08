@@ -86,8 +86,15 @@ async fn run_event_loop(
     let mut last_tick = Instant::now();
 
     loop {
+        // Redraws normally happen every 250ms (or on keypress) — plenty for
+        // a mostly-static TUI. The visualizer needs a real animation frame
+        // rate to look like motion instead of a slideshow, so it overrides
+        // that up to ~30fps while on. game_mode (explicitly opting into
+        // lower overhead) still wins over both.
         let tick_rate = if app.game_mode {
             Duration::from_millis(1000)
+        } else if app.visualizer_on {
+            Duration::from_millis(33)
         } else {
             Duration::from_millis(250)
         };
@@ -115,6 +122,7 @@ async fn run_event_loop(
             app.poll_artwork();
             app.poll_waveform();
             app.poll_eq().await;
+            app.poll_visualizer();
             app.maybe_save_queue();
             last_tick = Instant::now();
         }
@@ -322,6 +330,7 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
         KeyCode::Char('l') => run!(app, app.cycle_loop_mode().await),
         KeyCode::Char('x') => app.toggle_shuffle(),
         KeyCode::Char('t') => app.cycle_palette(),
+        KeyCode::Char('v') => app.toggle_visualizer(),
         KeyCode::Char('m') if matches!(app.current_tab, Tab::SoundCloud | Tab::Dashboard) => {
             app.load_more_soundcloud_tracks();
         }

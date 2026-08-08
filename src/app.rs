@@ -297,6 +297,15 @@ pub struct App {
     eq_applied_gains: eq::Gains,
     eq_saved_gains: eq::Gains,
 
+    /// Off by default — WASAPI loopback capture plus a continuous FFT is a
+    /// real, constant background CPU cost that shouldn't run unless someone
+    /// actually wants to see it. See `toggle_visualizer`.
+    pub visualizer_on: bool,
+    pub visualizer_bands: [f32; crate::audio::spectrum::BAND_COUNT],
+    visualizer_spectrum: crate::audio::spectrum::Spectrum,
+    #[cfg(windows)]
+    audio_capture: Option<crate::audio::capture::AudioCapture>,
+
     pub playlists: Vec<Playlist>,
     pub selected_playlist: usize,
     pub playlist_tracks: Vec<UnifiedTrack>,
@@ -462,6 +471,11 @@ impl App {
             eq_last_edit: None,
             eq_applied_gains: eq::FLAT,
             eq_saved_gains: eq::FLAT,
+            visualizer_on: false,
+            visualizer_bands: [0.0; crate::audio::spectrum::BAND_COUNT],
+            visualizer_spectrum: crate::audio::spectrum::Spectrum::new(),
+            #[cfg(windows)]
+            audio_capture: None,
             playlists: Vec::new(),
             selected_playlist: 0,
             playlist_tracks: Vec::new(),
@@ -1471,6 +1485,53 @@ impl App {
             self.eq_saved_gains = self.eq_gains;
         }
     }
+
+    /// Toggle the live spectrum visualizer. Starts/stops the WASAPI
+    /// loopback capture thread — mpv runs as a separate process we control
+    /// over IPC and never see raw PCM from, so this captures system audio
+    /// output independently instead (see `audio::capture`). Windows-only:
+    /// the capture mechanism doesn't exist elsewhere.
+    #[cfg(windows)]
+    pub fn toggle_visualizer(&mut self) {
+        self.visualizer_on = !self.visualizer_on;
+        if self.visualizer_on {
+            self.audio_capture = crate::audio::capture::AudioCapture::start();
+            if self.audio_capture.is_none() {
+                self.visualizer_on = false;
+                self.status_message = "Visualizer: couldn't start audio capture.".to_string();
+            } else {
+                self.status_message = "Visualizer: on".to_string();
+            }
+        } else {
+            self.audio_capture = None; // drops the capture thread
+            self.status_message = "Visualizer: off".to_string();
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub fn toggle_visualizer(&mut self) {
+        self.status_message = "Visualizer requires Windows (WASAPI loopback capture).".to_string();
+    }
+
+    /// Pulls the latest captured samples and re-runs the FFT, called every
+    /// tick while the visualizer is on. No-op (cheap: one bool check) the
+    /// rest of the time, and a no-op entirely off Windows.
+    #[cfg(windows)]
+    pub fn poll_visualizer(&mut self) {
+        if !self.visualizer_on {
+            return;
+        }
+        let Some(capture) = &self.audio_capture else {
+            return;
+        };
+        let samples = capture.latest(crate::audio::spectrum::FFT_SIZE);
+        self.visualizer_bands = *self
+            .visualizer_spectrum
+            .analyze(&samples, crate::audio::capture::SAMPLE_RATE);
+    }
+
+    #[cfg(not(windows))]
+    pub fn poll_visualizer(&mut self) {}
 
     pub async fn volume_up(&mut self) -> Result<()> {
         self.volume = (self.volume + 5).min(100);
