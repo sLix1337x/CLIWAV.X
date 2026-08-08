@@ -341,6 +341,26 @@ pub enum PromptKind {
     SoundCloudUsername,
 }
 
+/// `Picker::from_query_stdio()` writes an escape sequence and blocks for up
+/// to 1s waiting for the terminal to answer, before falling back to
+/// `from_fontsize` regardless. On Windows consoles that reply almost never
+/// arrives — cmd.exe, PowerShell, and plain Windows Terminal don't answer
+/// these queries — so every launch paid that full 1s just to land on the
+/// same fallback it would have used anyway. Skipping the query there and
+/// going straight to the fallback removes that delay with no change in
+/// outcome. Non-Windows terminals (Kitty, iTerm2, WezTerm, ...) reply
+/// quickly and detect real capabilities, so they keep querying.
+fn detect_picker() -> Picker {
+    #[cfg(windows)]
+    {
+        Picker::from_fontsize((8, 16))
+    }
+    #[cfg(not(windows))]
+    {
+        Picker::from_query_stdio().unwrap_or_else(|_| Picker::from_fontsize((8, 16)))
+    }
+}
+
 impl App {
     pub async fn new() -> Result<Self> {
         let config = Config::load()?;
@@ -432,10 +452,7 @@ impl App {
             should_quit: false,
             input_prompt: None,
             show_help: false,
-            // from_query_stdio can't reliably detect capabilities on Windows
-            // consoles; from_fontsize with a common cell size is the documented
-            // fallback there (still renders via Unicode halfblocks).
-            picker: Picker::from_query_stdio().unwrap_or_else(|_| Picker::from_fontsize((8, 16))),
+            picker: detect_picker(),
             artwork: None,
             artwork_cache: RefCell::new(None),
             artwork_accent: None,
