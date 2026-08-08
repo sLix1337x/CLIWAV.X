@@ -227,6 +227,34 @@ between now and any future player change.
 
 ## 3. Architecture: message-passing instead of poll-every-tick
 
+**Status: proof of concept done (artwork migrated), rest left as-is
+deliberately.** `AppMsg` + `msg_tx`/`msg_rx` (`mpsc::unbounded_channel`) now
+exist and `maybe_fetch_artwork`/`poll_messages` prove the pattern end to end
+— spawn site sends instead of storing a `JoinHandle`, staleness is handled
+by keying the message and checking it against current state before applying,
+one drain site replaces the old poll method. Search/waveform/SoundCloud
+loads/the library scan are all still on the old `Option<JoinHandle<T>>` +
+`poll_*` pattern — not because they're wrong, but per this doc's own
+"migrate one, then decide" plan: with the EQ and visualizer both landing
+without adding any new `JoinHandle`-based poll sites (EQ is fully sync +
+debounced, the visualizer's capture thread is a plain `std::thread`, not a
+tracked `tokio::task`), the original motivating pressure ("before adding
+several more async sources of state") didn't actually materialize this
+round. Converting the remaining five sites is real, low-urgency work
+whenever it's picked up again — not blocked on anything.
+
+One thing NOT done: the "cut latency to as soon as the message arrives"
+benefit described below needs the main loop's crossterm-event wait to stop
+blocking for up to the full tick interval (currently `crossterm::event::poll`
+blocks synchronously for up to `tick_rate`, so a message sent while blocked
+just waits for that poll to naturally return). Doing that properly means
+either polling on a short fixed cadence *decoupled from redraw* (redrawing
+only when something changed, not every poll) or switching to
+`crossterm::event::EventStream` + `tokio::select!` — either is a real,
+separate change to the event loop's architecture, not something to bundle
+into a single-feature migration. Flagging it as its own future item rather
+than half-doing it.
+
 Our current async pattern (search, artwork, waveform) is: spawn a
 `tokio::task`, store its `JoinHandle` in an `App` field, and every tick call
 a `poll_*` method that does `handle.is_finished()` + `now_or_never()` to drain
