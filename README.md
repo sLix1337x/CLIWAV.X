@@ -45,12 +45,12 @@ irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex
 
 The installer will:
 1. Install [mpv](https://mpv.io/) and [yt-dlp](https://github.com/yt-dlp/yt-dlp) automatically if `winget` is available and they are missing.
-2. Download the latest `cliwavx.exe` release binary and copy it to `%LOCALAPPDATA%\CLIWAV.X`.
+2. Download the latest release binary — as both `cliwavx.exe` and `wavx.exe` (identical, just a shorter name) — and copy them to `%LOCALAPPDATA%\CLIWAV.X`.
 3. Add that folder to your user PATH.
 
 If `winget` is unavailable, yt-dlp is downloaded as a portable executable into the same install folder. mpv will need to be installed manually in that case.
 
-After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so PATH changes are picked up. Then you can run `cliwavx` from any folder.
+After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so PATH changes are picked up. Then you can run `cliwavx` (or the shorter `wavx`) from any folder.
 
 ### Updating
 
@@ -60,9 +60,9 @@ Run the same one-liner again:
 irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex
 ```
 
-Every push to `master` rebuilds `cliwavx.exe` and republishes it to the
+Every push to `master` rebuilds both binaries and republishes them to the
 `latest` GitHub release, so re-running the installer always fetches the
-newest build and overwrites the one in `%LOCALAPPDATA%\CLIWAV.X`. It skips
+newest build and overwrites the ones in `%LOCALAPPDATA%\CLIWAV.X`. It skips
 mpv/yt-dlp if they're already installed.
 
 ### Build from source
@@ -73,19 +73,22 @@ If you have the [Rust toolchain](https://rustup.rs/) installed, you can also bui
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-That script installs dependencies (when possible), builds an optimized release binary, copies it to `%LOCALAPPDATA%\CLIWAV.X`, and adds it to your user PATH.
+That script installs dependencies (when possible), builds optimized release binaries, copies them to `%LOCALAPPDATA%\CLIWAV.X`, and adds it to your user PATH.
 
 ## Build
 
 ```bash
-cargo build --release   # optimized (LTO, stripped): target/release/cliwavx.exe
+cargo build --release   # optimized (LTO, stripped): target/release/cliwavx.exe and target/release/wavx.exe
 ```
 
 ## Usage
 
+`wavx` is a shorter alias for `cliwavx` — same binary, same behavior, pick whichever's less typing.
+
 ```bash
-# Launch interactive TUI (binary: cliwavx.exe)
+# Launch interactive TUI
 cliwavx
+wavx
 
 # Launch with a search query
 cliwavx -q "lofi hip hop"

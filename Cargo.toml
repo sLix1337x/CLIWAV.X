@@ -21,6 +21,12 @@ strip = true
 name = "cliwavx"
 path = "src/main.rs"
 
+# Short alias for the same binary — `wavx` launches identically to
+# `cliwavx`, just less to type. Both compile from the same main.rs.
+[[bin]]
+name = "wavx"
+path = "src/main.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1.43", features = ["full"] }

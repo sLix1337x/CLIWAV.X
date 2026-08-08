@@ -3,10 +3,11 @@ $ErrorActionPreference = "Stop"
 
 $repoOwner = "sLix1337x"
 $repoName  = "CLIWAV.X"
-$assetName = "cliwavx.exe"
+# Two identical binaries under different names, so both "cliwavx" and the
+# shorter "wavx" work as commands.
+$assetNames = @("cliwavx.exe", "wavx.exe")
 
 $installDir = Join-Path $env:LOCALAPPDATA "CLIWAV.X"
-$binaryPath = Join-Path $installDir $assetName
 
 function Test-Command($cmd) {
     return [bool](Get-Command $cmd -ErrorAction SilentlyContinue)
@@ -71,22 +72,24 @@ if (-not (Test-Command yt-dlp)) {
     Write-Host "yt-dlp is already installed." -ForegroundColor Green
 }
 
-# --- CLIWAV.X binary ---
-$downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/latest/$assetName"
-$tempFile = Join-Path $env:TEMP $assetName
+# --- CLIWAV.X binaries ---
+foreach ($assetName in $assetNames) {
+    $downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/latest/$assetName"
+    $tempFile = Join-Path $env:TEMP $assetName
 
-Write-Host "Downloading $assetName from GitHub Releases..." -ForegroundColor Cyan
-try {
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
-} catch {
-    Write-Host "Failed to download the release binary." -ForegroundColor Red
-    Write-Host "Make sure you are connected to the internet and the latest release exists at:"
-    Write-Host "https://github.com/$repoOwner/$repoName/releases/latest" -ForegroundColor Yellow
-    throw
+    Write-Host "Downloading $assetName from GitHub Releases..." -ForegroundColor Cyan
+    try {
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
+    } catch {
+        Write-Host "Failed to download $assetName." -ForegroundColor Red
+        Write-Host "Make sure you are connected to the internet and the latest release exists at:"
+        Write-Host "https://github.com/$repoOwner/$repoName/releases/latest" -ForegroundColor Yellow
+        throw
+    }
+
+    Copy-Item -Path $tempFile -Destination (Join-Path $installDir $assetName) -Force
+    Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
 }
-
-Copy-Item -Path $tempFile -Destination $binaryPath -Force
-Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
 
 # --- PATH ---
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -95,8 +98,8 @@ if ($userPath -notlike "*$installDir*") {
     Write-Host "Added $installDir to your user PATH." -ForegroundColor Green
 }
 
-Write-Host "CLIWAV.X installed to: $binaryPath" -ForegroundColor Green
-Write-Host "Restart your terminal and run 'cliwavx' from anywhere." -ForegroundColor Green
+Write-Host "CLIWAV.X installed to: $installDir" -ForegroundColor Green
+Write-Host "Restart your terminal and run 'cliwavx' (or the shorter 'wavx') from anywhere." -ForegroundColor Green
 
 if (-not (Test-Command mpv) -or -not (Test-Command yt-dlp)) {
     Write-Host "`nNOTE: mpv or yt-dlp could not be verified on PATH. They may need a terminal restart to be detected." -ForegroundColor Yellow

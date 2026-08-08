@@ -73,9 +73,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "cargo build --release failed"
 }
 
-$src = Join-Path $PSScriptRoot "target\release\cliwavx.exe"
-$dst = Join-Path $installDir "cliwavx.exe"
-Copy-Item $src $dst -Force
+Copy-Item (Join-Path $PSScriptRoot "target\release\cliwavx.exe") (Join-Path $installDir "cliwavx.exe") -Force
+Copy-Item (Join-Path $PSScriptRoot "target\release\wavx.exe") (Join-Path $installDir "wavx.exe") -Force
 
 # --- PATH ---
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -84,7 +83,7 @@ if ($userPath -notlike "*$installDir*") {
     Write-Host "Added $installDir to your user PATH."
 }
 
-Write-Host "Installation complete. Restart your terminal and run 'cliwavx' from any terminal."
+Write-Host "Installation complete. Restart your terminal and run 'cliwavx' (or the shorter 'wavx') from any terminal."
 
 if (-not (Test-Command mpv) -or -not (Test-Command yt-dlp)) {
     Write-Host "`nNOTE: mpv or yt-dlp could not be verified on PATH. They may need a terminal restart to be detected." -ForegroundColor Yellow
