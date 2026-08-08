@@ -244,7 +244,7 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
 
-        // Dashboard SoundCloud pane: switch Tracks/Likes/Reposts/Search (reloads).
+        // Dashboard SoundCloud pane: switch Search/Tracks/Likes/Reposts/Library.
         KeyCode::Left
             if matches!(app.current_tab, Tab::Dashboard)
                 && matches!(app.dashboard_pane, DashboardPane::SoundCloud) =>

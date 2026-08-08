@@ -24,6 +24,16 @@ const SOUNDCLOUD_PAGE_SIZE: usize = 100;
 /// reused before re-opening it re-runs yt-dlp.
 const SOUNDCLOUD_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Dashboard SoundCloud-pane selector slots: Search, then the three real
+/// `SoundCloudCategory::ALL` categories (slot index - 1), then a Library
+/// quick-access slot. Kept as plain indices (rather than folded into
+/// `SoundCloudCategory`) because Search/Library aren't browsable categories
+/// — they're pane actions — and `SoundCloudCategory::ALL` is shared with the
+/// standalone SoundCloud tab, which has no Search/Library slots of its own.
+pub const DASHBOARD_SC_SEARCH_SLOT: usize = 0;
+pub const DASHBOARD_SC_LIBRARY_SLOT: usize = 4;
+const DASHBOARD_SC_SLOT_COUNT: usize = 5;
+
 /// Genre buckets shown when no SoundCloud username is configured — each is
 /// just a live `scsearch:` query (idea from cliamp), so the SoundCloud pane
 /// and Dashboard are useful before any setup. SoundCloud's real chart
@@ -208,7 +218,8 @@ pub struct App {
     pub dashboard_sc_selected: usize,
     pub dashboard_sc_search_focus: SearchFocus,
     pub dashboard_sc_search_loading: bool,
-    dashboard_sc_search_handle: Option<tokio::task::JoinHandle<Result<Vec<UnifiedTrack>>>>,
+    dashboard_sc_search_handle:
+        Option<tokio::task::JoinHandle<(Vec<UnifiedTrack>, Option<String>, Option<String>)>>,
 
     pub soundcloud_username: String,
     pub soundcloud_pane: SoundCloudPane,
@@ -359,7 +370,10 @@ impl App {
             search_focus: SearchFocus::Input,
             search_loading: false,
             search_handle: None,
-            dashboard_sc_category_selected: 0,
+            // Starts on the Tracks slot (index 1: Search, Tracks, Likes,
+            // Reposts, Library) so first launch behaves like before this
+            // selector grew Search/Library entries.
+            dashboard_sc_category_selected: 1,
             dashboard_sc_search: false,
             dashboard_sc_query: String::new(),
             dashboard_sc_results: Vec::new(),
@@ -885,6 +899,8 @@ impl App {
                                 Some((PlaybackOrigin::SoundCloud, self.dashboard_sc_selected));
                             self.play_track(&track, true).await?;
                         }
+                    } else if self.dashboard_sc_category_selected == DASHBOARD_SC_LIBRARY_SLOT {
+                        self.current_tab = Tab::Library;
                     } else if self.soundcloud_user_tracks.is_empty() {
                         self.load_selected_soundcloud_category()?;
                     } else if let Some(track) = self
@@ -1408,8 +1424,9 @@ impl App {
         };
     }
 
-    /// Dashboard Left/Right: switch the SoundCloud category (or genre bucket
-    /// when no username is configured) and reload it.
+    /// Dashboard Left/Right: switch between the Search / Tracks / Likes /
+    /// Reposts / Library slots (or genre bucket when no username is
+    /// configured), loading the selected category as it lands.
     pub fn cycle_dashboard_soundcloud_mode(&mut self, forward: bool) {
         if self.soundcloud_username.is_empty() {
             let len = SOUNDCLOUD_GENRES.len();
@@ -1422,23 +1439,29 @@ impl App {
             self.load_selected_genre();
             return;
         }
-        let len = 4; // Tracks, Likes, Reposts, Search
         self.dashboard_sc_category_selected = if forward {
-            (self.dashboard_sc_category_selected + 1) % len
+            (self.dashboard_sc_category_selected + 1) % DASHBOARD_SC_SLOT_COUNT
         } else {
-            (self.dashboard_sc_category_selected + len - 1) % len
+            (self.dashboard_sc_category_selected + DASHBOARD_SC_SLOT_COUNT - 1)
+                % DASHBOARD_SC_SLOT_COUNT
         };
-        if self.dashboard_sc_category_selected == 3 {
-            self.dashboard_sc_search = true;
-            self.dashboard_sc_search_focus = SearchFocus::Input;
-            self.abort_dashboard_sc_search();
-            self.status_message =
-                "SoundCloud search mode. Type a query and press Enter.".to_string();
-            return;
+        match self.dashboard_sc_category_selected {
+            DASHBOARD_SC_SEARCH_SLOT => {
+                self.dashboard_sc_search = true;
+                self.dashboard_sc_search_focus = SearchFocus::Input;
+                self.abort_dashboard_sc_search();
+                self.status_message = "Search mode. Type a query and press Enter.".to_string();
+            }
+            DASHBOARD_SC_LIBRARY_SLOT => {
+                self.dashboard_sc_search = false;
+                self.status_message = "Press Enter to open Library.".to_string();
+            }
+            slot => {
+                self.dashboard_sc_search = false;
+                self.soundcloud_category_selected = slot - 1;
+                let _ = self.load_selected_soundcloud_category();
+            }
         }
-        self.dashboard_sc_search = false;
-        self.soundcloud_category_selected = self.dashboard_sc_category_selected;
-        let _ = self.load_selected_soundcloud_category();
     }
 
     fn abort_dashboard_sc_search(&mut self) {
@@ -1448,6 +1471,9 @@ impl App {
         self.dashboard_sc_search_loading = false;
     }
 
+    /// Searches all sources (local library, YouTube, SoundCloud, Spotify),
+    /// same as the main Search tab — reuses `run_search_task` so the
+    /// Dashboard's quick search isn't limited to SoundCloud.
     pub fn start_dashboard_sc_search(&mut self) {
         let query = self.dashboard_sc_query.trim().to_string();
         if query.is_empty() {
@@ -1460,14 +1486,22 @@ impl App {
         }
         self.dashboard_sc_results.clear();
         self.dashboard_sc_selected = 0;
+        let db_path = match Config::db_path() {
+            Ok(path) => path,
+            Err(e) => {
+                self.status_message = format!("Cannot search: {e}");
+                return;
+            }
+        };
         self.dashboard_sc_search_loading = true;
-        self.status_message = format!("Searching SoundCloud for '{}'...", query);
+        self.status_message = format!("Searching for '{}'...", query);
+        let filter = self.search_source_filter;
         let yt_dlp_path = self.config.player.yt_dlp_path.clone();
         let cookies = self.config.player.cookies_from_browser.clone();
+        let spotify_id = self.config.spotify.client_id.clone();
+        let spotify_secret = self.config.spotify.client_secret.clone();
         self.dashboard_sc_search_handle = Some(tokio::task::spawn(async move {
-            SoundCloudSource::new(&yt_dlp_path, &cookies)
-                .search(&query, 20)
-                .await
+            run_search_task(query, filter, db_path, yt_dlp_path, cookies, spotify_id, spotify_secret).await
         }));
     }
 
@@ -1480,21 +1514,18 @@ impl App {
         }
         let handle = self.dashboard_sc_search_handle.take().unwrap();
         self.dashboard_sc_search_loading = false;
-        match handle.now_or_never().unwrap_or(Ok(Err(ClimusicError::Source(
-            "search task panicked".into(),
-        )))) {
-            Ok(Ok(tracks)) => {
-                let count = tracks.len();
-                self.dashboard_sc_results = tracks;
-                self.status_message = format!("Found {} SoundCloud results.", count);
-                if count > 0 && self.dashboard_sc_search_focus == SearchFocus::Input {
-                    self.dashboard_sc_search_focus = SearchFocus::Results;
-                }
-            }
-            Ok(Err(e)) => {
-                self.status_message = format!("SoundCloud search failed: {}", e.friendly())
-            }
-            Err(_) => self.status_message = "SoundCloud search task panicked.".to_string(),
+        let Some((tracks, error, _imported)) = handle.now_or_never().and_then(|r| r.ok()) else {
+            self.status_message = "Search task failed.".to_string();
+            return;
+        };
+        let count = tracks.len();
+        self.dashboard_sc_results = tracks;
+        self.status_message = match error {
+            Some(e) => format!("Found {count} results (partial: {e})."),
+            None => format!("Found {count} results."),
+        };
+        if count > 0 && self.dashboard_sc_search_focus == SearchFocus::Input {
+            self.dashboard_sc_search_focus = SearchFocus::Results;
         }
     }
 

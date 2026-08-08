@@ -10,7 +10,7 @@ Browsers are heavy. `CLIWAV.X` uses a native Rust TUI and offloads audio decodin
 
 ## Features
 
-- **Dashboard home tab**: the landing screen shows what's playing (artwork + track info), your SoundCloud Tracks/Likes/Reposts (switch with `←` `→`), and the queue — all at a glance. Without a username configured, the SoundCloud pane seeds genre buckets (Trending, Lo-Fi, House, ...) backed by live search, so it's useful out of the box.
+- **Dashboard home tab**: the landing screen shows what's playing (artwork + track info), a selector for Search / Tracks / Likes / Reposts / Library (switch with `←` `→`, `Enter` to act), and the queue — all at a glance. Search here queries every source (local library, YouTube, SoundCloud, Spotify), same as the main Search tab; Library is a quick jump to the Library tab. Without a username configured, the selector instead browses genre buckets (Trending, Lo-Fi, House, ...) backed by live search, so it's useful out of the box.
 - **Local playback**: Scan your music folders and play FLAC, MP3, OGG, OPUS, M4A, AAC, WAV, WMA.
 - **YouTube & SoundCloud**: Search and stream via `yt-dlp`. Pasting a share link directly into search resolves it as a single track instead of running it through keyword search.
 - **SoundCloud user browsing**: Set your SoundCloud username and browse their Tracks / Likes / Reposts (category list first, then tracks within it). Loaded 100 tracks at a time in the background — press `m` for more, so collections with thousands of entries never block the UI.
@@ -84,7 +84,7 @@ cliwavx -q "lofi hip hop"
 | `Tab` / `Shift+Tab` | Switch tabs. Dashboard: toggle pane. Search: toggle typing vs. browsing results. Library/SoundCloud: toggle pane. |
 | `1` `2` `3` `4` `5` `6` | Jump to Dashboard / Search / Queue / Library / SoundCloud / Now Playing |
 | `↑` `↓` / `k` `j` | Navigate list |
-| `←` `→` (Dashboard) | Switch SoundCloud category (Tracks / Likes / Reposts), reloads the list |
+| `←` `→` (Dashboard) | Switch Search / Tracks / Likes / Reposts / Library, reloads categories as you land on them |
 | `Enter` (Search, typing) | Run search, then switch focus to the results list |
 | `Enter` (elsewhere) | Play selected track, or (SoundCloud categories) load the selected category |
 | `a` | Add selected track to queue |

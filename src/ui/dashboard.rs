@@ -45,8 +45,9 @@ fn draw_soundcloud(frame: &mut Frame, app: &App, area: Rect) {
     let active = matches!(app.dashboard_pane, DashboardPane::SoundCloud);
     let accent = accent_color(app);
 
-    // When a SoundCloud username is configured, the Dashboard selector adds a
-    // fourth "Search" mode that shows a query box + results list.
+    // When a SoundCloud username is configured, the Dashboard selector's
+    // "Search" slot shows a query box + all-source results list instead of
+    // a browsable category.
     let search_mode = !app.soundcloud_username.is_empty() && app.dashboard_sc_search;
     let rows = if search_mode {
         Layout::vertical([
@@ -59,9 +60,10 @@ fn draw_soundcloud(frame: &mut Frame, app: &App, area: Rect) {
         Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(area)
     };
 
-    // Category selector line: "◂ Tracks · Likes · Reposts · Search ▸" (Left/Right
-    // to switch, which also reloads the list). Without a username the selector
-    // browses genre buckets instead — too many to show, so just the current.
+    // Category selector line: "◂ Search · Tracks · Likes · Reposts · Library ▸"
+    // (Left/Right to switch, which also reloads the list). Without a username
+    // the selector browses genre buckets instead — too many to show, so just
+    // the current.
     let selector: Vec<Span> = if app.soundcloud_username.is_empty() {
         let genre = crate::app::SOUNDCLOUD_GENRES[app.soundcloud_genre_selected];
         vec![
@@ -73,7 +75,7 @@ fn draw_soundcloud(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(" ▸", muted_style()),
         ]
     } else {
-        let labels = ["Tracks", "Likes", "Reposts", "Search"];
+        let labels = ["Search", "Tracks", "Likes", "Reposts", "Library"];
         let mut spans = vec![Span::styled("◂ ", muted_style())];
         for (i, label) in labels.iter().enumerate() {
             let style = if i == app.dashboard_sc_category_selected {
@@ -94,9 +96,21 @@ fn draw_soundcloud(frame: &mut Frame, app: &App, area: Rect) {
         rows[0],
     );
 
+    let library_mode = !app.soundcloud_username.is_empty()
+        && !search_mode
+        && app.dashboard_sc_category_selected == crate::app::DASHBOARD_SC_LIBRARY_SLOT;
+    if library_mode {
+        let list_area = draw_section(frame, rows[1], "Library", active);
+        frame.render_widget(
+            Paragraph::new("Press Enter to open your Library.").style(muted_style()),
+            list_area,
+        );
+        return;
+    }
+
     if search_mode {
         let input_area = rows[1];
-        let list_area = draw_section(frame, rows[2], "SoundCloud Search", active);
+        let list_area = draw_section(frame, rows[2], "Search Results", active);
 
         let input_spans = vec![
             Span::styled("Search: ", muted_style()),
