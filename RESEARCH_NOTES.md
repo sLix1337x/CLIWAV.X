@@ -305,7 +305,18 @@ message-passing question:
   rewrite, and a natural fit if/when the EQ panel needs its own list-like
   band selector.
 
-## 4. Styling: a thin theme layer, and better gradients
+## 4. Styling: a thin theme layer, and better gradients — DONE (see `src/ui/theme.rs`, `lerp_rgb` in `src/ui/mod.rs`)
+
+Both ideas below were implemented as suggested. `theme::panel_border`/
+`theme::accent_bold` replaced five real duplicated call sites (found by
+grepping for the exact repeated chains, not guessed at) across
+`mod.rs`/`player.rs`/`search.rs`/`help.rs`/`dashboard.rs`/`soundcloud.rs`.
+`lerp_rgb` now interpolates via HSL (hue takes the short way around the
+circle; an achromatic/grey endpoint borrows the other endpoint's hue rather
+than an arbitrary one) — since every gradient helper in the app funnels
+through this one function, the fix applies everywhere (tab title, hero
+state word, volume/progress meters, EQ bars, visualizer bars) without
+touching any call site. Covered by new tests in `ui::tests`.
 
 Our `src/ui/mod.rs` already has color helpers (`lerp_rgb`, `brighten_rgb`,
 `dim_rgb`, `gradient_meter_spans`) but no shared "style presets" — every
@@ -344,9 +355,7 @@ right fix is small ratatui-native helpers like `fn split_header_body(area) ->
 
 1. ~~**EQ first**~~ — **done**, see section 1 above.
 2. ~~**Visualizer second**~~ — **done**, see section 2 above.
-3. **Message-passing refactor** — worth doing before or alongside the
-   visualizer if we want to avoid a fourth (and fifth, ...) `poll_*` method
-   piling onto the existing pattern; otherwise fine to defer.
-4. **Theme/gradient polish** — lowest urgency, but cheap, and worth folding
-   into whichever of the above touches styling first (the EQ panel's band
-   bars are a natural first beneficiary of better gradient interpolation).
+3. **Message-passing refactor** — proof of concept done (artwork migrated,
+   see section 3 above); the other five `poll_*` sites (search, waveform,
+   SoundCloud loads, the library scan) are deliberately left as-is for now.
+4. ~~**Theme/gradient polish**~~ — **done**, see section 4 above.
