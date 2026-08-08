@@ -225,23 +225,46 @@ between now and any future player change.
 
 </details>
 
-## 3. Architecture: message-passing instead of poll-every-tick
+## 3. Architecture: message-passing instead of poll-every-tick — DONE
 
-**Status: proof of concept done (artwork migrated), rest left as-is
-deliberately.** `AppMsg` + `msg_tx`/`msg_rx` (`mpsc::unbounded_channel`) now
-exist and `maybe_fetch_artwork`/`poll_messages` prove the pattern end to end
-— spawn site sends instead of storing a `JoinHandle`, staleness is handled
-by keying the message and checking it against current state before applying,
-one drain site replaces the old poll method. Search/waveform/SoundCloud
-loads/the library scan are all still on the old `Option<JoinHandle<T>>` +
-`poll_*` pattern — not because they're wrong, but per this doc's own
-"migrate one, then decide" plan: with the EQ and visualizer both landing
-without adding any new `JoinHandle`-based poll sites (EQ is fully sync +
-debounced, the visualizer's capture thread is a plain `std::thread`, not a
-tracked `tokio::task`), the original motivating pressure ("before adding
-several more async sources of state") didn't actually materialize this
-round. Converting the remaining five sites is real, low-urgency work
-whenever it's picked up again — not blocked on anything.
+**Status: fully migrated.** Every background task (artwork, waveform,
+search, dashboard SoundCloud search, SoundCloud genre load, SoundCloud page
+load, the library scan) now reports through `AppMsg` + `msg_tx`/`msg_rx`
+(`mpsc::unbounded_channel`), drained by one `poll_messages` instead of seven
+separate `Option<JoinHandle<T>>` fields + `poll_*` methods wired into
+`main.rs`'s tick block by hand. Went with the artwork-first proof of concept
+this doc originally suggested, then converted the rest once that held up.
+
+What had to be preserved deliberately, not just "delete the field":
+- **Cancellation.** Every site that called `handle.abort()` to supersede an
+  in-flight fetch (a newer search, a category switch, a track change) now
+  keeps a `tokio::task::AbortHandle` (not the full `JoinHandle`) purely for
+  that purpose — the result itself comes back over the channel instead.
+- **Staleness.** The old pattern got "ignore a result for state the user has
+  moved past" for free by simply overwriting the single polled field with
+  the new task's handle. A channel doesn't have that property — a stale
+  message still arrives — so every migrated message carries an explicit key
+  to check against current state before applying: a monotonic generation
+  counter for search/dashboard-search (no natural key beyond "which attempt
+  was this"), the genre/username+category/track-id the original code was
+  already comparing against for the rest.
+- **Panic/abort surfacing.** `JoinHandle::now_or_never()`/`.await` return
+  `Err(JoinError)` on a panicked or aborted task, which the old `poll_*`
+  methods matched on to show a specific status message. Preserved by
+  spawning a small "reporter" task per feature that `.await`s the real task
+  and maps a `JoinError` into the same fallback value the original arm
+  used, then sends unconditionally — so a panic still surfaces a message
+  instead of silently leaving a `_loading` flag stuck `true` forever.
+  `scan_library` (via `spawn_blocking`, not `spawn`) additionally wraps in
+  `std::panic::catch_unwind` for the same reason.
+
+**Caught mid-migration, not by inspection:** the compiler. Wrapping the
+waveform fetch's body in `let waveform = match source { ... };` (so a
+`tx.send` could follow it) turned the SoundCloud arm's `return Some(w)` —
+a precomputed-waveform fast path — into a return from the *whole spawned
+task*, skipping the send entirely. A type mismatch error caught it
+immediately; the fix was the same inner-`async {}.await` wrapper artwork
+already needed for its own early-returns.
 
 One thing NOT done: the "cut latency to as soon as the message arrives"
 benefit described below needs the main loop's crossterm-event wait to stop
@@ -355,7 +378,8 @@ right fix is small ratatui-native helpers like `fn split_header_body(area) ->
 
 1. ~~**EQ first**~~ — **done**, see section 1 above.
 2. ~~**Visualizer second**~~ — **done**, see section 2 above.
-3. **Message-passing refactor** — proof of concept done (artwork migrated,
-   see section 3 above); the other five `poll_*` sites (search, waveform,
-   SoundCloud loads, the library scan) are deliberately left as-is for now.
+3. ~~**Message-passing refactor**~~ — **done**, see section 3 above.
 4. ~~**Theme/gradient polish**~~ — **done**, see section 4 above.
+
+All four items from this document are now shipped. Nothing outstanding
+here — the next round of work isn't pre-planned.
