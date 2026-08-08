@@ -8,7 +8,6 @@ use crate::sources::soundcloud::SoundCloudSource;
 use crate::sources::spotify::SpotifySource;
 use crate::sources::youtube::YouTubeSource;
 use crate::sources::{TrackSource, UnifiedTrack};
-use futures::FutureExt;
 use rand::Rng;
 use ratatui_image::picker::Picker;
 use std::cell::RefCell;
@@ -214,7 +213,11 @@ pub struct App {
     pub search_source_filter: Option<TrackSource>,
     pub search_focus: SearchFocus,
     pub search_loading: bool,
-    search_handle: Option<tokio::task::JoinHandle<(Vec<UnifiedTrack>, Option<String>, Option<String>)>>,
+    search_abort: Option<tokio::task::AbortHandle>,
+    /// Bumped on every `start_search` call; a `SearchDone` message tagged
+    /// with an older generation than this is a superseded search and gets
+    /// dropped instead of overwriting newer results.
+    search_generation: u64,
 
     pub dashboard_sc_category_selected: usize,
     pub dashboard_sc_search: bool,
@@ -223,8 +226,8 @@ pub struct App {
     pub dashboard_sc_selected: usize,
     pub dashboard_sc_search_focus: SearchFocus,
     pub dashboard_sc_search_loading: bool,
-    dashboard_sc_search_handle:
-        Option<tokio::task::JoinHandle<(Vec<UnifiedTrack>, Option<String>, Option<String>)>>,
+    dashboard_sc_search_abort: Option<tokio::task::AbortHandle>,
+    dashboard_sc_search_generation: u64,
 
     pub soundcloud_username: String,
     pub soundcloud_pane: SoundCloudPane,
@@ -233,19 +236,19 @@ pub struct App {
     pub soundcloud_track_selected: usize,
     pub soundcloud_loading: bool,
     pub soundcloud_has_more: bool,
-    /// In-flight page load, keyed by the username and category it was
-    /// started for, so a stale page (user/category changed mid-load) is
-    /// discarded instead of merged into the new list. The joinhandle's
-    /// usize is the RAW entry count yt-dlp returned (see user_category).
-    soundcloud_load_handle: Option<(String, SoundCloudCategory, tokio::task::JoinHandle<Result<(Vec<UnifiedTrack>, usize)>>)>,
+    /// Cancel handle for an in-flight page load. Staleness (user/category
+    /// changed mid-load) is checked against the `username`/`category` the
+    /// `SoundCloudPageLoaded` message itself carries, not this field.
+    soundcloud_load_abort: Option<tokio::task::AbortHandle>,
     /// Next 1-indexed page position to request — tracked explicitly rather
     /// than derived from the loaded-track count, which drifts when entries
     /// fail to parse.
     soundcloud_next_start: usize,
-    /// Selected genre bucket (browse mode when no username is configured)
-    /// and its in-flight load, keyed by genre label for staleness checks.
+    /// Selected genre bucket (browse mode when no username is configured).
     pub soundcloud_genre_selected: usize,
-    soundcloud_genre_handle: Option<(String, tokio::task::JoinHandle<Result<Vec<UnifiedTrack>>>)>,
+    /// Cancel handle for an in-flight genre load. Staleness is checked
+    /// against the `genre` the `SoundCloudGenreLoaded` message carries.
+    soundcloud_genre_abort: Option<tokio::task::AbortHandle>,
     /// Loaded SoundCloud lists, keyed by (username, category) — or ("",
     /// genre) for genre buckets. Re-opening a cached list within the TTL
     /// skips the yt-dlp round-trip entirely. Value: (tracks, has_more,
@@ -340,17 +343,16 @@ pub struct App {
     /// falls back to the plain progress bar in that case.
     pub waveform: Option<Vec<f32>>,
     waveform_key: Option<String>,
-    waveform_handle: Option<tokio::task::JoinHandle<Option<Vec<f32>>>>,
     /// Session-lifetime cache keyed the same way as `waveform_key`, so
     /// replaying a track doesn't re-fetch/re-decode it.
     waveform_cache: HashMap<String, Vec<f32>>,
 
-    scan_handle: Option<tokio::task::JoinHandle<Result<()>>>,
+    scan_in_progress: bool,
 
-    /// Sender cloned into every task migrated to `AppMsg` (currently just
-    /// artwork) — `spawn`ed tasks report their result here instead of
-    /// through a polled `JoinHandle` field. `msg_rx` is drained once per
-    /// tick by `poll_messages`.
+    /// Sender cloned into every task reporting through `AppMsg` — `spawn`ed
+    /// tasks report their result here instead of through a polled
+    /// `JoinHandle` field. `msg_rx` is drained once per tick by
+    /// `poll_messages`.
     msg_tx: tokio::sync::mpsc::UnboundedSender<AppMsg>,
     msg_rx: tokio::sync::mpsc::UnboundedReceiver<AppMsg>,
 }
@@ -365,19 +367,44 @@ pub struct InputPrompt {
 /// Results from background `tokio::task`s, delivered through `App::msg_rx`
 /// instead of a dedicated `Option<JoinHandle<T>>` field + `poll_*` method
 /// per feature. Each variant carries its own staleness key (e.g. artwork's
-/// `key`) so a result for a track the user has since navigated away from is
-/// dropped instead of overwriting newer state — the same guard the
+/// `key`, search's `generation`) so a result superseded by newer state (a
+/// different track, a newer search, a changed SoundCloud category) is
+/// dropped instead of overwriting it — the same guard the
 /// `Option<JoinHandle>` pattern got for free by simply being overwritten.
 ///
-/// Only `artwork` is migrated to this pattern so far — a deliberate,
-/// incremental first step (see `RESEARCH_NOTES.md` section 3), not a signal
-/// that the remaining `Option<JoinHandle>` + `poll_*` sites are wrong. Kept
-/// this way until there's a second/third migration to prove the pattern
-/// generalizes cleanly rather than converting everything speculatively.
+/// Every background task still supports cancellation the same way it did
+/// before (an `AbortHandle` kept on `App`, e.g. `search_abort`) — moving to
+/// message-passing only changes how a *finished* result gets back to `App`,
+/// not whether an in-flight one can be cancelled.
 pub enum AppMsg {
     ArtworkLoaded {
         key: String,
         image: Option<image::DynamicImage>,
+    },
+    WaveformLoaded {
+        key: String,
+        waveform: Option<Vec<f32>>,
+    },
+    ScanDone(Result<()>),
+    SearchDone {
+        generation: u64,
+        tracks: Vec<UnifiedTrack>,
+        error: Option<String>,
+        imported: Option<String>,
+    },
+    DashboardScSearchDone {
+        generation: u64,
+        tracks: Vec<UnifiedTrack>,
+        error: Option<String>,
+    },
+    SoundCloudGenreLoaded {
+        genre: String,
+        result: Result<Vec<UnifiedTrack>>,
+    },
+    SoundCloudPageLoaded {
+        username: String,
+        category: SoundCloudCategory,
+        result: Result<(Vec<UnifiedTrack>, usize)>,
     },
 }
 
@@ -430,8 +457,13 @@ impl App {
 
         let scan_paths = config.local.paths.clone();
         let scan_db_path = Config::db_path()?;
-        let scan_handle = tokio::task::spawn_blocking(move || {
-            scan_library(&scan_paths, scan_db_path)
+        let scan_tx = msg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                scan_library(&scan_paths, scan_db_path)
+            }))
+            .unwrap_or_else(|_| Err(ClimusicError::Source("library scan panicked".into())));
+            let _ = scan_tx.send(AppMsg::ScanDone(result));
         });
 
         let soundcloud_username = config.soundcloud.username.clone();
@@ -451,7 +483,8 @@ impl App {
             search_source_filter: None,
             search_focus: SearchFocus::Input,
             search_loading: false,
-            search_handle: None,
+            search_abort: None,
+            search_generation: 0,
             // Starts on the Tracks slot (index 1: Search, Tracks, Likes,
             // Reposts, Library) so first launch behaves like before this
             // selector grew Search/Library entries.
@@ -462,7 +495,8 @@ impl App {
             dashboard_sc_selected: 0,
             dashboard_sc_search_focus: SearchFocus::Input,
             dashboard_sc_search_loading: false,
-            dashboard_sc_search_handle: None,
+            dashboard_sc_search_abort: None,
+            dashboard_sc_search_generation: 0,
             soundcloud_username,
             soundcloud_pane: SoundCloudPane::Categories,
             soundcloud_category_selected: 0,
@@ -470,10 +504,10 @@ impl App {
             soundcloud_track_selected: 0,
             soundcloud_loading: false,
             soundcloud_has_more: true,
-            soundcloud_load_handle: None,
+            soundcloud_load_abort: None,
             soundcloud_next_start: 1,
             soundcloud_genre_selected: 0,
-            soundcloud_genre_handle: None,
+            soundcloud_genre_abort: None,
             soundcloud_list_cache: HashMap::new(),
             soundcloud_autoplay_pending: false,
             autoplay_failed: false,
@@ -519,9 +553,8 @@ impl App {
             artwork_key: None,
             waveform: None,
             waveform_key: None,
-            waveform_handle: None,
             waveform_cache: HashMap::new(),
-            scan_handle: Some(scan_handle),
+            scan_in_progress: true,
             msg_tx,
             msg_rx,
         };
@@ -737,33 +770,25 @@ impl App {
         Ok(())
     }
 
-    /// Poll the background library scan and update the status message when done.
-    pub fn poll_scan(&mut self) {
-        if let Some(handle) = &self.scan_handle {
-            if handle.is_finished() {
-                let handle = self.scan_handle.take().unwrap();
-                match handle.now_or_never().unwrap_or(Ok(Ok(()))) {
-                    Ok(Ok(())) => self.status_message = "Local library scan complete.".to_string(),
-                    Ok(Err(e)) => self.status_message = format!("Library scan failed: {e}"),
-                    Err(_) => self.status_message = "Library scan panicked.".to_string(),
-                }
-            }
-        }
-    }
-
     pub async fn rescan_local_library(&mut self) -> Result<()> {
         if self.scan_in_progress() {
-            // Replacing the handle would leave the old scan running detached:
-            // two concurrent clear/insert cycles against the same SQLite file.
+            // Starting a second scan concurrently would mean two clear/insert
+            // cycles racing against the same SQLite file.
             self.status_message = "Library scan already in progress.".to_string();
             return Ok(());
         }
         let paths = self.config.local.paths.clone();
         let db_path = Config::db_path()?;
         self.status_message = "Scanning local library in background...".to_string();
-        self.scan_handle = Some(tokio::task::spawn_blocking(move || {
-            scan_library(&paths, db_path)
-        }));
+        self.scan_in_progress = true;
+        let tx = self.msg_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                scan_library(&paths, db_path)
+            }))
+            .unwrap_or_else(|_| Err(ClimusicError::Source("library scan panicked".into())));
+            let _ = tx.send(AppMsg::ScanDone(result));
+        });
         Ok(())
     }
 
@@ -779,8 +804,8 @@ impl App {
             return;
         }
         // A newer search supersedes one still in flight.
-        if let Some(handle) = self.search_handle.take() {
-            handle.abort();
+        if let Some(abort) = self.search_abort.take() {
+            abort.abort();
         }
         self.search_results.clear();
         self.search_selected = 0;
@@ -804,49 +829,28 @@ impl App {
             }
         };
         self.search_loading = true;
+        self.search_generation += 1;
+        let generation = self.search_generation;
         let filter = self.search_source_filter;
         let yt_dlp_path = self.config.player.yt_dlp_path.clone();
         let cookies = self.config.player.cookies_from_browser.clone();
         let spotify_id = self.config.spotify.client_id.clone();
         let spotify_secret = self.config.spotify.client_secret.clone();
-        self.search_handle = Some(tokio::task::spawn(async move {
+        let handle = tokio::task::spawn(async move {
             run_search_task(query, filter, db_path, yt_dlp_path, cookies, spotify_id, spotify_secret).await
-        }));
-    }
-
-    /// Merge in the results of a finished background search.
-    pub fn poll_search(&mut self) {
-        let Some(handle) = &self.search_handle else {
-            return;
-        };
-        if !handle.is_finished() {
-            return;
-        }
-        let handle = self.search_handle.take().unwrap();
-        self.search_loading = false;
-        let Some((tracks, error, imported)) = handle.now_or_never().and_then(|r| r.ok()) else {
-            self.status_message = "Search task failed.".to_string();
-            return;
-        };
-        let count = tracks.len();
-        self.search_results = tracks;
-        self.status_message = match (&imported, error) {
-            (Some(name), _) => {
-                // The import wrote a playlist — refresh the Library tab.
-                let _ = self.load_playlists();
-                format!("Imported playlist '{name}' ({count} tracks — see Library).")
-            }
-            (None, Some(e)) => format!("Found {count} results (partial: {e})."),
-            (None, None) => format!("Found {count} results."),
-        };
-        // Mirror the old inline behavior: a fruitful Enter-search moves
-        // focus from the input box to the results list.
-        if count > 0
-            && matches!(self.current_tab, Tab::Search)
-            && matches!(self.search_focus, SearchFocus::Input)
-        {
-            self.search_focus = SearchFocus::Results;
-        }
+        });
+        self.search_abort = Some(handle.abort_handle());
+        // A tiny reporter task, rather than awaiting `handle` directly here:
+        // this lets `start_search` return immediately (non-blocking) while
+        // still catching a panicked/aborted task via `JoinHandle::await`'s
+        // own `Result`, same as `now_or_never` did for the old polled field.
+        let tx = self.msg_tx.clone();
+        tokio::task::spawn(async move {
+            let (tracks, error, imported) = handle
+                .await
+                .unwrap_or_else(|_| (Vec::new(), Some("search task failed".to_string()), None));
+            let _ = tx.send(AppMsg::SearchDone { generation, tracks, error, imported });
+        });
     }
 
     pub fn select_next(&mut self) {
@@ -1437,7 +1441,7 @@ impl App {
     /// Whether the background local-library scan is still running — drives
     /// the status-bar spinner alongside `soundcloud_loading`.
     pub fn scan_in_progress(&self) -> bool {
-        self.scan_handle.is_some()
+        self.scan_in_progress
     }
 
     pub fn eq_select_previous(&mut self) {
@@ -1714,8 +1718,8 @@ impl App {
     }
 
     fn abort_dashboard_sc_search(&mut self) {
-        if let Some(handle) = self.dashboard_sc_search_handle.take() {
-            handle.abort();
+        if let Some(abort) = self.dashboard_sc_search_abort.take() {
+            abort.abort();
         }
         self.dashboard_sc_search_loading = false;
     }
@@ -1730,8 +1734,8 @@ impl App {
             self.dashboard_sc_selected = 0;
             return;
         }
-        if let Some(handle) = self.dashboard_sc_search_handle.take() {
-            handle.abort();
+        if let Some(abort) = self.dashboard_sc_search_abort.take() {
+            abort.abort();
         }
         self.dashboard_sc_results.clear();
         self.dashboard_sc_selected = 0;
@@ -1743,50 +1747,36 @@ impl App {
             }
         };
         self.dashboard_sc_search_loading = true;
+        self.dashboard_sc_search_generation += 1;
+        let generation = self.dashboard_sc_search_generation;
         self.status_message = format!("Searching for '{}'...", query);
         let filter = self.search_source_filter;
         let yt_dlp_path = self.config.player.yt_dlp_path.clone();
         let cookies = self.config.player.cookies_from_browser.clone();
         let spotify_id = self.config.spotify.client_id.clone();
         let spotify_secret = self.config.spotify.client_secret.clone();
-        self.dashboard_sc_search_handle = Some(tokio::task::spawn(async move {
+        let handle = tokio::task::spawn(async move {
             run_search_task(query, filter, db_path, yt_dlp_path, cookies, spotify_id, spotify_secret).await
-        }));
-    }
-
-    pub fn poll_dashboard_sc_search(&mut self) {
-        let Some(handle) = &self.dashboard_sc_search_handle else {
-            return;
-        };
-        if !handle.is_finished() {
-            return;
-        }
-        let handle = self.dashboard_sc_search_handle.take().unwrap();
-        self.dashboard_sc_search_loading = false;
-        let Some((tracks, error, _imported)) = handle.now_or_never().and_then(|r| r.ok()) else {
-            self.status_message = "Search task failed.".to_string();
-            return;
-        };
-        let count = tracks.len();
-        self.dashboard_sc_results = tracks;
-        self.status_message = match error {
-            Some(e) => format!("Found {count} results (partial: {e})."),
-            None => format!("Found {count} results."),
-        };
-        if count > 0 && self.dashboard_sc_search_focus == SearchFocus::Input {
-            self.dashboard_sc_search_focus = SearchFocus::Results;
-        }
+        });
+        self.dashboard_sc_search_abort = Some(handle.abort_handle());
+        let tx = self.msg_tx.clone();
+        tokio::task::spawn(async move {
+            let (tracks, error, _imported) = handle
+                .await
+                .unwrap_or_else(|_| (Vec::new(), Some("search task failed".to_string()), None));
+            let _ = tx.send(AppMsg::DashboardScSearchDone { generation, tracks, error });
+        });
     }
 
     /// Abort any in-flight SoundCloud page load and clear autoplay state
     /// that pointed into the old list. Dropping a JoinHandle only detaches
     /// the task (the yt-dlp child would keep running), so cancel properly.
     fn abort_soundcloud_load(&mut self) {
-        if let Some((_, _, handle)) = self.soundcloud_load_handle.take() {
-            handle.abort();
+        if let Some(abort) = self.soundcloud_load_abort.take() {
+            abort.abort();
         }
-        if let Some((_, handle)) = self.soundcloud_genre_handle.take() {
-            handle.abort();
+        if let Some(abort) = self.soundcloud_genre_abort.take() {
+            abort.abort();
         }
         self.soundcloud_loading = false;
         self.soundcloud_autoplay_pending = false;
@@ -1808,8 +1798,8 @@ impl App {
             .filter(|(_, _, _, at)| at.elapsed() < SOUNDCLOUD_CACHE_TTL)
             .map(|(tracks, _, _, _)| tracks.clone());
         if let Some(tracks) = cached {
-            if let Some((_, handle)) = self.soundcloud_genre_handle.take() {
-                handle.abort();
+            if let Some(abort) = self.soundcloud_genre_abort.take() {
+                abort.abort();
             }
             self.soundcloud_loading = false;
             self.soundcloud_user_tracks = tracks;
@@ -1821,11 +1811,11 @@ impl App {
             return;
         }
 
-        if let Some((_, _, handle)) = self.soundcloud_load_handle.take() {
-            handle.abort();
+        if let Some(abort) = self.soundcloud_load_abort.take() {
+            abort.abort();
         }
-        if let Some((_, handle)) = self.soundcloud_genre_handle.take() {
-            handle.abort();
+        if let Some(abort) = self.soundcloud_genre_abort.take() {
+            abort.abort();
         }
         self.soundcloud_user_tracks.clear();
         self.soundcloud_track_selected = 0;
@@ -1844,40 +1834,14 @@ impl App {
         let handle = tokio::task::spawn(async move {
             SoundCloudSource::new(yt_dlp_path, cookies).search(&task_query, 30).await
         });
-        self.soundcloud_genre_handle = Some((genre_label, handle));
-    }
-
-    /// Merge in a finished genre load (see `load_selected_genre`).
-    fn poll_genre_load(&mut self) {
-        let Some((_, handle)) = &self.soundcloud_genre_handle else {
-            return;
-        };
-        if !handle.is_finished() {
-            return;
-        }
-        let (genre, handle) = self.soundcloud_genre_handle.take().unwrap();
-        self.soundcloud_loading = false;
-        // The genre selection moved on while this was loading — discard.
-        if genre != SOUNDCLOUD_GENRES[self.soundcloud_genre_selected] {
-            return;
-        }
-        match handle.now_or_never() {
-            Some(Ok(Ok(tracks))) => {
-                self.soundcloud_user_tracks = tracks;
-                self.soundcloud_list_cache
-                    .retain(|_, (_, _, _, at)| at.elapsed() < SOUNDCLOUD_CACHE_TTL);
-                self.soundcloud_list_cache.insert(
-                    (String::new(), genre.clone()),
-                    (self.soundcloud_user_tracks.clone(), false, 1, Instant::now()),
-                );
-                self.status_message =
-                    format!("{genre}: {} tracks.", self.soundcloud_user_tracks.len());
-            }
-            Some(Ok(Err(e))) => {
-                self.status_message = format!("Error loading {genre}: {}", e.friendly())
-            }
-            _ => self.status_message = format!("{genre} load task failed."),
-        }
+        self.soundcloud_genre_abort = Some(handle.abort_handle());
+        let tx = self.msg_tx.clone();
+        tokio::task::spawn(async move {
+            let result = handle
+                .await
+                .unwrap_or_else(|_| Err(ClimusicError::Source("genre load task failed".into())));
+            let _ = tx.send(AppMsg::SoundCloudGenreLoaded { genre: genre_label, result });
+        });
     }
 
     /// Load the selected category (Tracks/Likes/Reposts) for the configured
@@ -1937,8 +1901,8 @@ impl App {
     fn spawn_soundcloud_page(&mut self, category: SoundCloudCategory, start: usize) {
         // Replacing an in-flight load: abort it — dropping the handle would
         // only detach the task and leak the yt-dlp child.
-        if let Some((_, _, old)) = self.soundcloud_load_handle.take() {
-            old.abort();
+        if let Some(abort) = self.soundcloud_load_abort.take() {
+            abort.abort();
         }
         self.soundcloud_loading = true;
         self.status_message = format!(
@@ -1958,94 +1922,14 @@ impl App {
                 .user_category(&task_username, suffix, start, SOUNDCLOUD_PAGE_SIZE)
                 .await
         });
-        self.soundcloud_load_handle = Some((username, category, handle));
-    }
-
-    /// Poll the background SoundCloud page fetch and merge results in when done.
-    pub async fn poll_soundcloud_load(&mut self) {
-        self.poll_genre_load();
-        let Some((_, _, handle)) = &self.soundcloud_load_handle else {
-            return;
-        };
-        if !handle.is_finished() {
-            return;
-        }
-        let (username, category, handle) = self.soundcloud_load_handle.take().unwrap();
-        self.soundcloud_loading = false;
-
-        // A username or category change while this page was in flight makes
-        // the result stale — discard it instead of merging it into the new
-        // list; whatever autoplay was waiting on it no longer applies.
-        if username != self.soundcloud_username
-            || category != SoundCloudCategory::ALL[self.soundcloud_category_selected]
-        {
-            self.soundcloud_autoplay_pending = false;
-            return;
-        }
-
-        match handle.now_or_never().unwrap_or_else(|| {
-            Ok(Err(ClimusicError::Source("load task panicked".into())))
-        }) {
-            Ok(Ok((page, raw_count))) => {
-                self.soundcloud_user_tracks.extend(page);
-                // Pagination advances by what yt-dlp actually returned, not
-                // by how many entries survived parsing.
-                self.soundcloud_next_start += raw_count;
-                self.soundcloud_has_more = raw_count == SOUNDCLOUD_PAGE_SIZE;
-                // Cache the list as loaded so far (prune expired first).
-                self.soundcloud_list_cache
-                    .retain(|_, (_, _, _, at)| at.elapsed() < SOUNDCLOUD_CACHE_TTL);
-                self.soundcloud_list_cache.insert(
-                    (username, category.label().to_string()),
-                    (
-                        self.soundcloud_user_tracks.clone(),
-                        self.soundcloud_has_more,
-                        self.soundcloud_next_start,
-                        Instant::now(),
-                    ),
-                );
-                self.status_message = if self.soundcloud_has_more {
-                    format!(
-                        "{}: {} loaded (press 'm' for more).",
-                        category.label(),
-                        self.soundcloud_user_tracks.len()
-                    )
-                } else {
-                    format!(
-                        "{}: {} loaded (all).",
-                        category.label(),
-                        self.soundcloud_user_tracks.len()
-                    )
-                };
-
-                if self.soundcloud_autoplay_pending {
-                    self.soundcloud_autoplay_pending = false;
-                    if let Some((PlaybackOrigin::SoundCloud, index)) = self.playback_origin {
-                        if let Some(track) = self.soundcloud_user_tracks.get(index).cloned() {
-                            if let Err(e) = self.play_track(&track, false).await {
-                                self.status_message = format!("Error resuming autoplay: {e}");
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(Err(e)) => {
-                // A failed autoplay continuation fetch must latch — otherwise
-                // poll_playback retries the same failing page every tick.
-                if self.soundcloud_autoplay_pending {
-                    self.autoplay_failed = true;
-                }
-                self.soundcloud_autoplay_pending = false;
-                self.status_message = format!("Error loading SoundCloud page: {}", e.friendly());
-            }
-            Err(_) => {
-                if self.soundcloud_autoplay_pending {
-                    self.autoplay_failed = true;
-                }
-                self.soundcloud_autoplay_pending = false;
-                self.status_message = "SoundCloud load task panicked.".to_string();
-            }
-        }
+        self.soundcloud_load_abort = Some(handle.abort_handle());
+        let tx = self.msg_tx.clone();
+        tokio::task::spawn(async move {
+            let result = handle
+                .await
+                .unwrap_or_else(|_| Err(ClimusicError::Source("load task panicked".into())));
+            let _ = tx.send(AppMsg::SoundCloudPageLoaded { username, category, result });
+        });
     }
 
     /// Kick off a background download+decode of the current track's artwork,
@@ -2122,7 +2006,7 @@ impl App {
     /// Drains `msg_rx`, applying every pending background-task result.
     /// Called once per tick — see `AppMsg` for why this replaces a
     /// per-feature `Option<JoinHandle>` + `poll_*` method for artwork.
-    pub fn poll_messages(&mut self) {
+    pub async fn poll_messages(&mut self) {
         while let Ok(msg) = self.msg_rx.try_recv() {
             match msg {
                 AppMsg::ArtworkLoaded { key, image } => {
@@ -2136,6 +2020,157 @@ impl App {
                         self.artwork_accent = extract_accent(&image);
                         self.artwork = Some(image);
                         *self.artwork_cache.borrow_mut() = None;
+                    }
+                }
+                AppMsg::WaveformLoaded { key, waveform } => {
+                    // Same staleness guard as artwork: a track switch while
+                    // this was in flight makes the result irrelevant now.
+                    if self.waveform_key.as_ref() != Some(&key) {
+                        continue;
+                    }
+                    if let Some(waveform) = waveform {
+                        self.waveform_cache.insert(key, waveform.clone());
+                        self.waveform = Some(waveform);
+                    }
+                }
+                AppMsg::ScanDone(result) => {
+                    self.scan_in_progress = false;
+                    self.status_message = match result {
+                        Ok(()) => "Local library scan complete.".to_string(),
+                        Err(e) => format!("Library scan failed: {e}"),
+                    };
+                }
+                AppMsg::SearchDone { generation, tracks, error, imported } => {
+                    // A newer search was started (and this one aborted)
+                    // before this result arrived — drop it.
+                    if generation != self.search_generation {
+                        continue;
+                    }
+                    self.search_loading = false;
+                    let count = tracks.len();
+                    self.search_results = tracks;
+                    self.status_message = match (&imported, error) {
+                        (Some(name), _) => {
+                            // The import wrote a playlist — refresh the Library tab.
+                            let _ = self.load_playlists();
+                            format!("Imported playlist '{name}' ({count} tracks — see Library).")
+                        }
+                        (None, Some(e)) => format!("Found {count} results (partial: {e})."),
+                        (None, None) => format!("Found {count} results."),
+                    };
+                    // Mirror the old inline behavior: a fruitful Enter-search
+                    // moves focus from the input box to the results list.
+                    if count > 0
+                        && matches!(self.current_tab, Tab::Search)
+                        && matches!(self.search_focus, SearchFocus::Input)
+                    {
+                        self.search_focus = SearchFocus::Results;
+                    }
+                }
+                AppMsg::DashboardScSearchDone { generation, tracks, error } => {
+                    if generation != self.dashboard_sc_search_generation {
+                        continue;
+                    }
+                    self.dashboard_sc_search_loading = false;
+                    let count = tracks.len();
+                    self.dashboard_sc_results = tracks;
+                    self.status_message = match error {
+                        Some(e) => format!("Found {count} results (partial: {e})."),
+                        None => format!("Found {count} results."),
+                    };
+                    if count > 0 && self.dashboard_sc_search_focus == SearchFocus::Input {
+                        self.dashboard_sc_search_focus = SearchFocus::Results;
+                    }
+                }
+                AppMsg::SoundCloudGenreLoaded { genre, result } => {
+                    self.soundcloud_loading = false;
+                    // The genre selection moved on while this was loading — discard.
+                    if genre != SOUNDCLOUD_GENRES[self.soundcloud_genre_selected] {
+                        continue;
+                    }
+                    match result {
+                        Ok(tracks) => {
+                            self.soundcloud_user_tracks = tracks;
+                            self.soundcloud_list_cache
+                                .retain(|_, (_, _, _, at)| at.elapsed() < SOUNDCLOUD_CACHE_TTL);
+                            self.soundcloud_list_cache.insert(
+                                (String::new(), genre.clone()),
+                                (self.soundcloud_user_tracks.clone(), false, 1, Instant::now()),
+                            );
+                            self.status_message =
+                                format!("{genre}: {} tracks.", self.soundcloud_user_tracks.len());
+                        }
+                        Err(e) => {
+                            self.status_message = format!("Error loading {genre}: {}", e.friendly());
+                        }
+                    }
+                }
+                AppMsg::SoundCloudPageLoaded { username, category, result } => {
+                    self.soundcloud_loading = false;
+                    // A username or category change while this page was in
+                    // flight makes the result stale — discard it instead of
+                    // merging it into the new list; whatever autoplay was
+                    // waiting on it no longer applies.
+                    if username != self.soundcloud_username
+                        || category != SoundCloudCategory::ALL[self.soundcloud_category_selected]
+                    {
+                        self.soundcloud_autoplay_pending = false;
+                        continue;
+                    }
+                    match result {
+                        Ok((page, raw_count)) => {
+                            self.soundcloud_user_tracks.extend(page);
+                            // Pagination advances by what yt-dlp actually
+                            // returned, not by how many entries survived parsing.
+                            self.soundcloud_next_start += raw_count;
+                            self.soundcloud_has_more = raw_count == SOUNDCLOUD_PAGE_SIZE;
+                            self.soundcloud_list_cache
+                                .retain(|_, (_, _, _, at)| at.elapsed() < SOUNDCLOUD_CACHE_TTL);
+                            self.soundcloud_list_cache.insert(
+                                (username, category.label().to_string()),
+                                (
+                                    self.soundcloud_user_tracks.clone(),
+                                    self.soundcloud_has_more,
+                                    self.soundcloud_next_start,
+                                    Instant::now(),
+                                ),
+                            );
+                            self.status_message = if self.soundcloud_has_more {
+                                format!(
+                                    "{}: {} loaded (press 'm' for more).",
+                                    category.label(),
+                                    self.soundcloud_user_tracks.len()
+                                )
+                            } else {
+                                format!(
+                                    "{}: {} loaded (all).",
+                                    category.label(),
+                                    self.soundcloud_user_tracks.len()
+                                )
+                            };
+
+                            if self.soundcloud_autoplay_pending {
+                                self.soundcloud_autoplay_pending = false;
+                                if let Some((PlaybackOrigin::SoundCloud, index)) = self.playback_origin {
+                                    if let Some(track) = self.soundcloud_user_tracks.get(index).cloned() {
+                                        if let Err(e) = self.play_track(&track, false).await {
+                                            self.status_message = format!("Error resuming autoplay: {e}");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            // A failed autoplay continuation fetch must latch —
+                            // otherwise poll_playback retries the same failing
+                            // page every tick.
+                            if self.soundcloud_autoplay_pending {
+                                self.autoplay_failed = true;
+                            }
+                            self.soundcloud_autoplay_pending = false;
+                            self.status_message =
+                                format!("Error loading SoundCloud page: {}", e.friendly());
+                        }
                     }
                 }
             }
@@ -2153,7 +2188,6 @@ impl App {
         let Some(track) = self.current_track.clone() else {
             self.waveform_key = None;
             self.waveform = None;
-            self.waveform_handle = None;
             return;
         };
 
@@ -2162,7 +2196,6 @@ impl App {
             return;
         }
         self.waveform_key = Some(key.clone());
-        self.waveform_handle = None;
 
         if let Some(cached) = self.waveform_cache.get(&key) {
             self.waveform = Some(cached.clone());
@@ -2183,9 +2216,14 @@ impl App {
         let source = track.source;
         let playable_url = track.playable_url.clone();
         let waveform_url = track.waveform_url.clone();
+        let tx = self.msg_tx.clone();
 
-        self.waveform_handle = Some(tokio::task::spawn(async move {
-            match source {
+        // The inner `async` block (like artwork's) lets the SoundCloud arm's
+        // early `return Some(w)` short-circuit just the match, not the
+        // whole task — otherwise it would skip the `tx.send` below entirely.
+        tokio::task::spawn(async move {
+            let waveform = async {
+                match source {
                 TrackSource::Local => {
                     tokio::task::spawn_blocking(move || crate::audio::waveform_from_file(&playable_url))
                         .await
@@ -2235,26 +2273,11 @@ impl App {
                         .flatten()
                 }
                 TrackSource::Spotify => None,
+                }
             }
-        }));
-    }
-
-    /// Poll the background waveform fetch; a successful result is cached for
-    /// the rest of the session under the same key `maybe_fetch_waveform` used.
-    pub fn poll_waveform(&mut self) {
-        let Some(handle) = &self.waveform_handle else {
-            return;
-        };
-        if !handle.is_finished() {
-            return;
-        }
-        let handle = self.waveform_handle.take().unwrap();
-        if let Ok(Some(waveform)) = handle.now_or_never().unwrap_or(Ok(None)) {
-            if let Some(key) = &self.waveform_key {
-                self.waveform_cache.insert(key.clone(), waveform.clone());
-            }
-            self.waveform = Some(waveform);
-        }
+            .await;
+            let _ = tx.send(AppMsg::WaveformLoaded { key, waveform });
+        });
     }
 }
 

@@ -114,13 +114,8 @@ async fn run_event_loop(
 
         if last_tick.elapsed() >= tick_rate {
             app.tick = app.tick.wrapping_add(1);
-            app.poll_scan();
             app.poll_playback().await;
-            app.poll_soundcloud_load().await;
-            app.poll_dashboard_sc_search();
-            app.poll_search();
-            app.poll_messages();
-            app.poll_waveform();
+            app.poll_messages().await;
             app.poll_eq().await;
             app.poll_visualizer();
             app.maybe_save_queue();
