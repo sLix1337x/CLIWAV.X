@@ -75,6 +75,7 @@ impl MpvPlayer {
         }
         let mut cmd = Command::new(&self.mpv_path);
         cmd.args(&args)
+            .kill_on_drop(true)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
