@@ -92,20 +92,25 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(accent),
     ));
 
+    // Extra breathing room after the glyph: several source glyphs (e.g. the
+    // SoundCloud cloud) render wider than the single cell the layout budgets
+    // for in some fonts, crowding a single space.
     let source_line = if track.album.is_empty() {
-        format!("{} {}", source_glyph(track.source), track.source.as_str())
+        format!("{}  {}", source_glyph(track.source), track.source.display_name())
     } else {
         format!(
-            "{} {}  ·  {}",
+            "{}  {}  ·  {}",
             source_glyph(track.source),
-            track.source.as_str(),
+            track.source.display_name(),
             track.album
         )
     };
     let source_span = Span::styled(source_line, Style::default().fg(source_color(track.source)));
 
+    // Letter-spaced for visual weight — the same "bigger" trick used for the
+    // state headline, since terminals have no real font-size control.
     let title_line = Line::from(Span::styled(
-        &track.title,
+        letter_spaced(&track.title),
         Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
     ));
     let artist_line = Line::from(Span::styled(&track.artist, muted_style()));
@@ -132,7 +137,17 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             Constraint::Length(waveform_block_h),
         ])
         .split(content_area);
-        (rows[0], Some(rows[1]))
+        // Inset from the section's full width — a waveform running edge to
+        // edge read as too long; a margin on both sides makes it feel like
+        // a deliberate element rather than a stretched-out bar.
+        let inset = rows[1].width / 10;
+        let band = Rect {
+            x: rows[1].x + inset,
+            y: rows[1].y,
+            width: rows[1].width.saturating_sub(inset * 2),
+            height: rows[1].height,
+        };
+        (rows[0], Some(band))
     } else {
         (content_area, None)
     };
@@ -248,6 +263,10 @@ const NOW_PLAYING_GAP: u16 = 3;
 /// Artwork never grows past this even on very wide terminals — it's a
 /// side column sharing space with text, not the whole show.
 const NOW_PLAYING_MAX_ART_WIDTH: u16 = 36;
+/// Text column never grows past this either — without a cap it stretched to
+/// fill the rest of a wide terminal, which just pinned the whole art+info
+/// group against the left edge instead of it reading as one centered unit.
+const NOW_PLAYING_MAX_TEXT_WIDTH: u16 = 50;
 
 /// Artwork column: a source caption above the cover, playback state below
 /// it — framed like a media player's now-playing card, not just a bare
@@ -263,7 +282,17 @@ fn draw_side_by_side<'a>(
 ) {
     let art_w = ((content_area.width.saturating_sub(NOW_PLAYING_GAP)) * 2 / 5)
         .min(NOW_PLAYING_MAX_ART_WIDTH);
-    let text_w = content_area.width.saturating_sub(art_w + NOW_PLAYING_GAP);
+    let text_w = content_area
+        .width
+        .saturating_sub(art_w + NOW_PLAYING_GAP)
+        .min(NOW_PLAYING_MAX_TEXT_WIDTH);
+    // The art+gap+text group is centered as a single block within the
+    // section — without this, capping `text_w` above just left a wide gap
+    // on the right instead of fixing the "everything hugs the left edge"
+    // problem it was meant to solve.
+    let block_w = art_w + NOW_PLAYING_GAP + text_w;
+    let block_x = content_area.x + content_area.width.saturating_sub(block_w) / 2;
+
     // Reserve the caption rows (source above, state below) plus a 1-row gap
     // on each side of the cover, so the whole card gets a vertical budget.
     let art_budget = content_area.height.saturating_sub(4);
@@ -282,7 +311,7 @@ fn draw_side_by_side<'a>(
     let right_y = center_y.saturating_sub(right_h / 2).max(content_area.y);
 
     let caption_area = |y: u16| Rect {
-        x: content_area.x,
+        x: block_x,
         y,
         width: art_w,
         height: 1,
@@ -295,7 +324,7 @@ fn draw_side_by_side<'a>(
     let art_y = left_y + 2;
     if art_h > 0 {
         let art_area = Rect {
-            x: content_area.x,
+            x: block_x,
             y: art_y,
             width: art_w,
             height: art_h,
@@ -309,7 +338,7 @@ fn draw_side_by_side<'a>(
     );
 
     let text_area = Rect {
-        x: content_area.x + art_w + NOW_PLAYING_GAP,
+        x: block_x + art_w + NOW_PLAYING_GAP,
         y: right_y,
         width: text_w,
         height: content_area.height.saturating_sub(right_y - content_area.y),

@@ -228,12 +228,9 @@ fn draw_queue(frame: &mut Frame, app: &App, area: Rect) {
                     Style::default().fg(source_color(track.source)),
                 ),
             ];
-            spans.extend(track_name_spans(
-                &track.artist,
-                &track.title,
-                is_now_playing(app, track),
-                accent,
-            ));
+            // Track name only, no artist — the queue is a list of what's
+            // next, not a search-results view; artist names just add noise.
+            spans.extend(track_name_spans("", &track.title, is_now_playing(app, track), accent));
             ListItem::new(Line::from(spans)).style(zebra_style(i))
         })
         .collect();

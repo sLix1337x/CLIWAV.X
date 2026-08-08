@@ -154,6 +154,18 @@ impl TrackSource {
             TrackSource::Spotify => "spotify",
         }
     }
+
+    /// Proper-case label for UI display. `as_str()` stays lowercase — it
+    /// doubles as a cache-key/identifier fragment used throughout the app,
+    /// so it isn't the place to fix display casing.
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            TrackSource::Local => "Local",
+            TrackSource::YouTube => "YouTube",
+            TrackSource::SoundCloud => "SoundCloud",
+            TrackSource::Spotify => "Spotify",
+        }
+    }
 }
 
 impl std::fmt::Display for TrackSource {
