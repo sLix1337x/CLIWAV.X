@@ -41,8 +41,7 @@ impl ClimusicError {
     /// A plain-language version for the status bar. yt-dlp's raw stderr is
     /// noisy and often meaningless ("ERROR: [soundcloud] 12345: ... HTTP
     /// Error 404 ..."), so the common failure shapes are translated;
-    /// anything unrecognized falls through to the raw message. Idea from
-    /// cliamp, which classifies these the same way.
+    /// anything unrecognized falls through to the raw message.
     pub fn friendly(&self) -> String {
         let ClimusicError::Source(msg) = self else {
             return self.to_string();

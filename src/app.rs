@@ -38,9 +38,9 @@ pub const DASHBOARD_SC_LIBRARY_SLOT: usize = 4;
 const DASHBOARD_SC_SLOT_COUNT: usize = 5;
 
 /// Genre buckets shown when no SoundCloud username is configured — each is
-/// just a live `scsearch:` query (idea from cliamp), so the SoundCloud pane
-/// and Dashboard are useful before any setup. SoundCloud's real chart
-/// endpoints 404 through yt-dlp, so these are searches, not charts.
+/// just a live `scsearch:` query, so the SoundCloud pane and Dashboard are
+/// useful before any setup. SoundCloud's real chart endpoints 404 through
+/// yt-dlp, so these are searches, not charts.
 pub const SOUNDCLOUD_GENRES: [&str; 7] = [
     "Trending",
     "Hip-Hop",
