@@ -335,111 +335,6 @@
       background: var(--text-faint);
     }
 
-    /* Dashboard mockup */
-    .mock {
-      max-width: 940px;
-      margin: 66px auto 0;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      text-align: left;
-    }
-    .mock-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 14px 20px;
-      background: var(--bg-elevated);
-      border-bottom: 1px solid var(--border);
-    }
-    .mock-header i {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.12);
-    }
-    .mock-title {
-      margin-left: 10px;
-      color: var(--text-faint);
-      font-family: var(--mono);
-      font-size: 0.76rem;
-      font-weight: 500;
-    }
-    .mock-body {
-      display: grid;
-      grid-template-columns: 1.15fr 1fr;
-      gap: 1px;
-      background: var(--border);
-    }
-    .mock-pane {
-      background: var(--bg-card);
-      padding: 26px 28px;
-    }
-    .mock-label {
-      font-family: var(--mono);
-      font-size: 0.68rem;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-faint);
-      margin: 0 0 18px;
-    }
-    .art-block {
-      width: 88px;
-      height: 88px;
-      border-radius: 14px;
-      background: var(--gradient);
-      display: grid;
-      place-items: center;
-      margin-bottom: 18px;
-      box-shadow: 0 12px 30px rgba(124, 92, 252, 0.3);
-    }
-    .art-block svg { width: 34px; height: 34px; color: rgba(10, 10, 15, 0.75); }
-    .now-playing .track-title { font-weight: 700; font-size: 1.05rem; margin: 0 0 4px; }
-    .now-playing .track-artist { color: var(--accent-soft); font-size: 0.86rem; margin: 0 0 18px; }
-    .mock-progress {
-      height: 5px;
-      border-radius: 3px;
-      background: rgba(255, 255, 255, 0.08);
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-    .mock-progress-fill {
-      width: 58%;
-      height: 100%;
-      background: var(--gradient);
-      border-radius: 3px;
-    }
-    .mock-time {
-      display: flex;
-      justify-content: space-between;
-      color: var(--text-faint);
-      font-family: var(--mono);
-      font-size: 0.72rem;
-    }
-    .mock-sub { display: flex; flex-direction: column; }
-    .mock-sub + .mock-sub { border-top: 1px solid var(--border); }
-    .mock-list { display: flex; flex-direction: column; gap: 2px; }
-    .mock-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 7px 0;
-      font-size: 0.82rem;
-    }
-    .mock-row .idx {
-      color: var(--text-faint);
-      font-family: var(--mono);
-      font-size: 0.72rem;
-      width: 14px;
-      flex-shrink: 0;
-    }
-    .mock-row .name { color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .mock-row.active .name { color: var(--accent-soft); font-weight: 600; }
-    .mock-row .dur { color: var(--text-faint); font-family: var(--mono); font-size: 0.72rem; }
-
     /* Sections */
     section { padding: 96px 0; }
     .section-header {
@@ -679,7 +574,6 @@
 
     @media (max-width: 760px) {
       .nav-links { display: none; }
-      .mock-body { grid-template-columns: 1fr; }
       .hero { padding: 76px 0 50px; }
       section { padding: 72px 0; }
       .callout { padding: 26px; }
@@ -746,43 +640,6 @@
         <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>Written in Rust</span>
         <span class="divider"></span>
         <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>Zero-bloat, mpv-powered</span>
-      </div>
-
-      <div class="mock">
-        <div class="mock-header">
-          <i></i><i></i><i></i>
-          <span class="mock-title">cliwavx.exe — dashboard</span>
-        </div>
-        <div class="mock-body">
-          <div class="mock-pane now-playing">
-            <p class="mock-label">Now Playing</p>
-            <div class="art-block">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-            </div>
-            <p class="track-title">She Neva Knows</p>
-            <p class="track-artist">lofi ver &middot; SoundCloud</p>
-            <div class="mock-progress"><div class="mock-progress-fill"></div></div>
-            <div class="mock-time"><span>1:47</span><span>3:02</span></div>
-          </div>
-          <div class="mock-pane">
-            <div class="mock-sub">
-              <p class="mock-label">SoundCloud &middot; Tracks</p>
-              <div class="mock-list">
-                <div class="mock-row active"><span class="idx">▶</span><span class="name">She Neva Knows</span><span class="dur">3:02</span></div>
-                <div class="mock-row"><span class="idx">02</span><span class="name">Late Night Drive</span><span class="dur">2:41</span></div>
-                <div class="mock-row"><span class="idx">03</span><span class="name">Rooftop Session</span><span class="dur">4:15</span></div>
-              </div>
-            </div>
-            <div class="mock-sub">
-              <p class="mock-label">Queue &middot; 12 tracks</p>
-              <div class="mock-list">
-                <div class="mock-row"><span class="idx">01</span><span class="name">Midnight Static</span><span class="dur">3:20</span></div>
-                <div class="mock-row"><span class="idx">02</span><span class="name">Amber Skies</span><span class="dur">2:58</span></div>
-                <div class="mock-row"><span class="idx">03</span><span class="name">Nocturne EP</span><span class="dur">3:44</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </header>
