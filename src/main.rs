@@ -119,7 +119,7 @@ async fn run_event_loop(
             app.poll_soundcloud_load().await;
             app.poll_dashboard_sc_search();
             app.poll_search();
-            app.poll_artwork();
+            app.poll_messages();
             app.poll_waveform();
             app.poll_eq().await;
             app.poll_visualizer();

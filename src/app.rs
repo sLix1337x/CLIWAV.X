@@ -334,7 +334,6 @@ pub struct App {
     /// accent the Now Playing panel. None while no track/artwork is loaded.
     pub artwork_accent: Option<(u8, u8, u8)>,
     artwork_key: Option<String>,
-    artwork_handle: Option<tokio::task::JoinHandle<Option<image::DynamicImage>>>,
 
     /// Bucketed, normalized amplitude data for the current track's Now
     /// Playing waveform. `None` while unloaded/uncached/unsupported — the UI
@@ -347,6 +346,13 @@ pub struct App {
     waveform_cache: HashMap<String, Vec<f32>>,
 
     scan_handle: Option<tokio::task::JoinHandle<Result<()>>>,
+
+    /// Sender cloned into every task migrated to `AppMsg` (currently just
+    /// artwork) — `spawn`ed tasks report their result here instead of
+    /// through a polled `JoinHandle` field. `msg_rx` is drained once per
+    /// tick by `poll_messages`.
+    msg_tx: tokio::sync::mpsc::UnboundedSender<AppMsg>,
+    msg_rx: tokio::sync::mpsc::UnboundedReceiver<AppMsg>,
 }
 
 #[derive(Debug, Clone)]
@@ -354,6 +360,25 @@ pub struct InputPrompt {
     pub title: String,
     pub value: String,
     pub kind: PromptKind,
+}
+
+/// Results from background `tokio::task`s, delivered through `App::msg_rx`
+/// instead of a dedicated `Option<JoinHandle<T>>` field + `poll_*` method
+/// per feature. Each variant carries its own staleness key (e.g. artwork's
+/// `key`) so a result for a track the user has since navigated away from is
+/// dropped instead of overwriting newer state — the same guard the
+/// `Option<JoinHandle>` pattern got for free by simply being overwritten.
+///
+/// Only `artwork` is migrated to this pattern so far — a deliberate,
+/// incremental first step (see `RESEARCH_NOTES.md` section 3), not a signal
+/// that the remaining `Option<JoinHandle>` + `poll_*` sites are wrong. Kept
+/// this way until there's a second/third migration to prove the pattern
+/// generalizes cleanly rather than converting everything speculatively.
+pub enum AppMsg {
+    ArtworkLoaded {
+        key: String,
+        image: Option<image::DynamicImage>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -386,6 +411,7 @@ fn detect_picker() -> Picker {
 
 impl App {
     pub async fn new() -> Result<Self> {
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel();
         let config = Config::load()?;
         let db = Database::open(Config::db_path()?)?;
         let player = MpvPlayer::new(&config.player.mpv_path, config.player.audio_exclusive);
@@ -491,12 +517,13 @@ impl App {
             artwork_cache: RefCell::new(None),
             artwork_accent: None,
             artwork_key: None,
-            artwork_handle: None,
             waveform: None,
             waveform_key: None,
             waveform_handle: None,
             waveform_cache: HashMap::new(),
             scan_handle: Some(scan_handle),
+            msg_tx,
+            msg_rx,
         };
 
         app.player.start().await?;
@@ -2029,7 +2056,6 @@ impl App {
             self.artwork = None;
             self.artwork_accent = None;
             *self.artwork_cache.borrow_mut() = None;
-            self.artwork_handle = None;
             return;
         };
 
@@ -2040,11 +2066,10 @@ impl App {
         if Some(&key) == self.artwork_key.as_ref() {
             return;
         }
-        self.artwork_key = Some(key);
+        self.artwork_key = Some(key.clone());
         self.artwork = None;
         self.artwork_accent = None;
         *self.artwork_cache.borrow_mut() = None;
-        self.artwork_handle = None;
 
         let direct_url = track.thumbnail_url.clone();
         // SoundCloud's flat-playlist listing (a user's Likes/Reposts/Tracks
@@ -2063,44 +2088,57 @@ impl App {
             return;
         }
 
-        self.artwork_handle = Some(tokio::task::spawn(async move {
-            let thumb_url = match direct_url {
-                Some(url) => url,
-                None => {
-                    let track_url = oembed_fallback_url?;
-                    crate::sources::soundcloud::fetch_oembed_thumbnail(&track_url)
-                        .await
-                        .ok()
-                        .flatten()?
-                }
-            };
-            let bytes = crate::sources::http_client(std::time::Duration::from_secs(10))
-                .get(&thumb_url)
-                .send()
-                .await
-                .ok()?
-                .bytes()
-                .await
-                .ok()?;
-            image::load_from_memory(&bytes).ok()
-        }));
+        // Reports its result through `msg_tx` (see `AppMsg`) instead of a
+        // stored/polled `JoinHandle` — the inner `async` block lets the `?`
+        // early-returns short-circuit to `None` without skipping the send.
+        let tx = self.msg_tx.clone();
+        tokio::task::spawn(async move {
+            let image = async {
+                let thumb_url = match direct_url {
+                    Some(url) => url,
+                    None => {
+                        let track_url = oembed_fallback_url?;
+                        crate::sources::soundcloud::fetch_oembed_thumbnail(&track_url)
+                            .await
+                            .ok()
+                            .flatten()?
+                    }
+                };
+                let bytes = crate::sources::http_client(std::time::Duration::from_secs(10))
+                    .get(&thumb_url)
+                    .send()
+                    .await
+                    .ok()?
+                    .bytes()
+                    .await
+                    .ok()?;
+                image::load_from_memory(&bytes).ok()
+            }
+            .await;
+            let _ = tx.send(AppMsg::ArtworkLoaded { key, image });
+        });
     }
 
-    /// Poll the background artwork fetch. The decoded image is stored as-is;
-    /// `ui::player` encodes it to the terminal's graphics protocol lazily
-    /// (and caches that encoding) the first time it's actually rendered.
-    pub fn poll_artwork(&mut self) {
-        let Some(handle) = &self.artwork_handle else {
-            return;
-        };
-        if !handle.is_finished() {
-            return;
-        }
-        let handle = self.artwork_handle.take().unwrap();
-        if let Ok(Some(image)) = handle.now_or_never().unwrap_or(Ok(None)) {
-            self.artwork_accent = extract_accent(&image);
-            self.artwork = Some(image);
-            *self.artwork_cache.borrow_mut() = None;
+    /// Drains `msg_rx`, applying every pending background-task result.
+    /// Called once per tick — see `AppMsg` for why this replaces a
+    /// per-feature `Option<JoinHandle>` + `poll_*` method for artwork.
+    pub fn poll_messages(&mut self) {
+        while let Ok(msg) = self.msg_rx.try_recv() {
+            match msg {
+                AppMsg::ArtworkLoaded { key, image } => {
+                    // Stale: the user navigated to a different track before
+                    // this fetch finished. Drop it — applying it now would
+                    // show the wrong cover.
+                    if self.artwork_key.as_ref() != Some(&key) {
+                        continue;
+                    }
+                    if let Some(image) = image {
+                        self.artwork_accent = extract_accent(&image);
+                        self.artwork = Some(image);
+                        *self.artwork_cache.borrow_mut() = None;
+                    }
+                }
+            }
         }
     }
 
