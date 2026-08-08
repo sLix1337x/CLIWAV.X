@@ -227,5 +227,6 @@ fn into_unified(track: SpotifyTrack) -> UnifiedTrack {
         source: TrackSource::Spotify,
         playable_url: format!("spotify:track:{}", track.id),
         thumbnail_url,
+        waveform_url: None,
     }
 }

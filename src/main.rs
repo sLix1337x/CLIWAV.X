@@ -113,6 +113,7 @@ async fn run_event_loop(
             app.poll_dashboard_sc_search();
             app.poll_search();
             app.poll_artwork();
+            app.poll_waveform();
             app.maybe_save_queue();
             last_tick = Instant::now();
         }

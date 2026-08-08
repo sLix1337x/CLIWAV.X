@@ -14,7 +14,8 @@ Browsers are heavy. `CLIWAV.X` uses a native Rust TUI and offloads audio decodin
 - **Local playback**: Scan your music folders and play FLAC, MP3, OGG, OPUS, M4A, AAC, WAV, WMA.
 - **YouTube & SoundCloud**: Search and stream via `yt-dlp`. Pasting a share link directly into search resolves it as a single track instead of running it through keyword search.
 - **SoundCloud user browsing**: Set your SoundCloud username and browse their Tracks / Likes / Reposts (category list first, then tracks within it). Loaded 100 tracks at a time in the background — press `m` for more, so collections with thousands of entries never block the UI.
-- **Album artwork**: The Now Playing tab renders the track's artwork directly in the terminal (via `ratatui-image`), centered with the track info and a progress bar under it. Fidelity depends on your terminal — full color in Kitty/iTerm2/WezTerm/Sixel-capable terminals, a blockier Unicode "halfblock" rendition elsewhere (e.g. plain Windows Terminal), still recognizable either way.
+- **Album artwork**: The Now Playing tab renders the track's artwork directly in the terminal (via `ratatui-image`), alongside the track info on wide terminals (stacked on narrow ones). Fidelity depends on your terminal — full color in Kitty/iTerm2/WezTerm/Sixel-capable terminals, a blockier Unicode "halfblock" rendition elsewhere (e.g. plain Windows Terminal), still recognizable either way.
+- **Waveform timeline**: The Now Playing tab shows a real, mirrored amplitude waveform instead of a flat progress bar, colored played/unplayed like SoundCloud's or foobar2000's seekbars. Local files are decoded directly (via `symphonia`); SoundCloud tracks reuse the source's own precomputed waveform when available (no extra audio download); YouTube fetches a low-bitrate stream just for the analysis, separate from the playback-quality one, and every track's result is cached for the session so replaying it doesn't re-fetch. Falls back to the plain bar while loading or for a codec it can't decode (e.g. WMA, some Opus streams) — never an error, just no waveform for that track.
 - **Cover-driven accent color**: a vibrant color is pulled from each track's own artwork (via `color-thief`) and used to tint the Now Playing panel and volume meter, so the screen feels like it belongs to what's playing. Press `t` to override it with a curated palette (teal/magenta/amber/violet) — handy for monochrome covers that extract to a muddy accent.
 - **Spotify discovery**: Search tracks via the official Spotify Web API; playback is resolved through YouTube or local files.
 - **Unified queue**: Mix tracks from any source in one queue.
@@ -217,6 +218,7 @@ plays, and can click briefly on track/device changes — so it's off by default.
 - `yt-dlp` extracts direct audio URLs for YouTube and SoundCloud.
 - Local metadata is indexed in SQLite using `lofty`.
 - The TUI is built with `ratatui`.
+- Waveform amplitude data is decoded with `symphonia` (local files and, as a fallback, YouTube/SoundCloud streams) — this is separate from playback, which still goes through `mpv` unchanged.
 
 ## License
 

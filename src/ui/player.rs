@@ -1,4 +1,5 @@
 use crate::app::{App, LoopMode};
+use crate::ui::waveform;
 use crate::ui::{
     accent_color, brighten_rgb, draw_section, gradient_meter_spans, gradient_spans, muted_style,
     playback_status, source_color, source_glyph, to_rgb,
@@ -91,23 +92,6 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(accent),
     ));
 
-    // Progress bar: same gradient-meter treatment, driven by the polled
-    // position/duration. Shows "--:--" until mpv reports a duration.
-    let progress_pct = if app.playback_dur > 0.0 {
-        ((app.playback_pos / app.playback_dur).clamp(0.0, 1.0) * 100.0) as u8
-    } else {
-        0
-    };
-    let mut progress_spans = gradient_meter_spans(progress_pct, 24, accent);
-    progress_spans.push(Span::styled(
-        format!(
-            "  {} / {}",
-            format_time(app.playback_pos),
-            format_time(app.playback_dur)
-        ),
-        muted_style(),
-    ));
-
     let source_line = if track.album.is_empty() {
         format!("{} {}", source_glyph(track.source), track.source.as_str())
     } else {
@@ -118,80 +102,197 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             track.album
         )
     };
+    let source_span = Span::styled(source_line, Style::default().fg(source_color(track.source)));
 
-    let lines = vec![
-        Line::from(state_spans),
-        Line::default(),
-        Line::from(Span::styled(
-            &track.title,
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled(&track.artist, muted_style())),
-        Line::from(Span::styled(
-            source_line,
-            Style::default().fg(source_color(track.source)),
-        )),
-        Line::default(),
-        Line::from(progress_spans),
-        Line::default(),
-        Line::from(volume_spans),
-        Line::from(vec![
-            Span::styled("Repeat: ", muted_style()),
-            Span::styled(app.loop_mode.label(), repeat_style(app.loop_mode)),
-            Span::styled("    Shuffle: ", muted_style()),
-            Span::styled(
-                if app.shuffle { "On" } else { "Off" },
-                shuffle_style(app.shuffle),
-            ),
-        ]),
-    ];
-    let text_h = lines.len() as u16;
+    let title_line = Line::from(Span::styled(
+        &track.title,
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    ));
+    let artist_line = Line::from(Span::styled(&track.artist, muted_style()));
+    let volume_line = Line::from(volume_spans);
+    let repeat_shuffle_line = Line::from(vec![
+        Span::styled("Repeat: ", muted_style()),
+        Span::styled(app.loop_mode.label(), repeat_style(app.loop_mode)),
+        Span::styled("    Shuffle: ", muted_style()),
+        Span::styled(
+            if app.shuffle { "On" } else { "Off" },
+            shuffle_style(app.shuffle),
+        ),
+    ]);
 
-    // Side-by-side on anything reasonably wide: artwork on the left, the
-    // info block on the right, both vertically centered on the same row so
-    // they read as one aligned unit instead of a stack whose pieces drift
-    // apart at different widths. Narrow terminals fall back to the old
-    // stacked layout — there isn't room for a legible cover next to a
-    // legible text column below ~70 columns.
-    if content_area.width >= NOW_PLAYING_SIDE_BY_SIDE_MIN_WIDTH {
-        draw_side_by_side(frame, app, content_area, lines, text_h);
+    // A full-width waveform band sits under the artwork+info row (art
+    // column left, title/artist/volume/repeat block right, or stacked on
+    // narrow terminals — same as before), so it gets the whole section's
+    // width for maximum horizontal resolution rather than being squeezed
+    // into whichever column happens to hold it.
+    let waveform_block_h = WAVEFORM_BAND_HEIGHT + 2; // 1-row gap above, 1-row time readout below
+    let (top_area, waveform_area) = if content_area.height > waveform_block_h {
+        let rows = Layout::vertical([
+            Constraint::Length(content_area.height - waveform_block_h),
+            Constraint::Length(waveform_block_h),
+        ])
+        .split(content_area);
+        (rows[0], Some(rows[1]))
     } else {
-        draw_stacked(frame, app, content_area, lines, text_h);
+        (content_area, None)
+    };
+
+    // Side-by-side on anything reasonably wide: artwork on the left (source
+    // caption above it, playback state below it — a media-player-style
+    // frame around the cover) and the title/artist/volume block on the
+    // right, vertically centered on the same row so the two columns read as
+    // one aligned unit. Narrow terminals fall back to the old stacked
+    // layout — there isn't room for a legible cover next to a legible text
+    // column below ~70 columns.
+    if top_area.width >= NOW_PLAYING_SIDE_BY_SIDE_MIN_WIDTH {
+        let right_lines = vec![
+            title_line,
+            artist_line,
+            Line::default(),
+            volume_line,
+            Line::default(),
+            repeat_shuffle_line,
+        ];
+        let right_h = right_lines.len() as u16;
+        draw_side_by_side(
+            frame,
+            app,
+            top_area,
+            source_span,
+            Line::from(state_spans),
+            right_lines,
+            right_h,
+        );
+    } else {
+        let lines = vec![
+            Line::from(state_spans),
+            Line::default(),
+            title_line,
+            artist_line,
+            Line::from(source_span),
+            Line::default(),
+            volume_line,
+            Line::default(),
+            repeat_shuffle_line,
+        ];
+        let text_h = lines.len() as u16;
+        draw_stacked(frame, app, top_area, lines, text_h);
+    }
+
+    if let Some(waveform_area) = waveform_area {
+        draw_waveform_band(frame, app, waveform_area, accent);
     }
 }
 
 const NOW_PLAYING_SIDE_BY_SIDE_MIN_WIDTH: u16 = 70;
+/// Rows the mirrored waveform bars themselves occupy (excludes the gap row
+/// above and the time-readout row below).
+const WAVEFORM_BAND_HEIGHT: u16 = 4;
+
+/// Full-width band under the artwork+info row: the waveform (or, until one
+/// is loaded/cached/supported for this track, today's plain progress bar as
+/// a seamless fallback) plus an elapsed/total time readout underneath.
+fn draw_waveform_band(frame: &mut Frame, app: &App, area: Rect, accent: Color) {
+    if area.width == 0 {
+        return;
+    }
+    let rows = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(WAVEFORM_BAND_HEIGHT),
+        Constraint::Length(1),
+    ])
+    .split(area);
+    let bars_area = rows[1];
+    let readout_area = rows[2];
+
+    let progress_ratio = if app.playback_dur > 0.0 {
+        (app.playback_pos / app.playback_dur).clamp(0.0, 1.0) as f32
+    } else {
+        0.0
+    };
+
+    match &app.waveform {
+        Some(samples) => {
+            let lines = waveform::render(samples, bars_area.width, bars_area.height, progress_ratio, accent);
+            frame.render_widget(Paragraph::new(lines), bars_area);
+        }
+        None => {
+            // Fallback: today's flat bar, a single row centered in the
+            // band's vertical space so it doesn't look stranded at the top.
+            let progress_pct = (progress_ratio * 100.0) as u8;
+            let spans = gradient_meter_spans(progress_pct, bars_area.width as usize, accent);
+            let fallback_area = Rect {
+                x: bars_area.x,
+                y: bars_area.y + bars_area.height / 2,
+                width: bars_area.width,
+                height: 1,
+            };
+            frame.render_widget(Paragraph::new(Line::from(spans)), fallback_area);
+        }
+    }
+
+    let elapsed = format_time(app.playback_pos);
+    let total = format_time(app.playback_dur);
+    let gap = " ".repeat(
+        (readout_area.width as usize).saturating_sub(elapsed.chars().count() + total.chars().count()),
+    );
+    let readout = Line::from(vec![
+        Span::styled(elapsed, muted_style()),
+        Span::raw(gap),
+        Span::styled(total, muted_style()),
+    ]);
+    frame.render_widget(Paragraph::new(readout), readout_area);
+}
 /// Horizontal gap between the artwork column and the info column.
 const NOW_PLAYING_GAP: u16 = 3;
 /// Artwork never grows past this even on very wide terminals — it's a
 /// side column sharing space with text, not the whole show.
 const NOW_PLAYING_MAX_ART_WIDTH: u16 = 36;
 
+/// Artwork column: a source caption above the cover, playback state below
+/// it — framed like a media player's now-playing card, not just a bare
+/// image. `right_lines` is the title/artist/timeline/volume block.
 fn draw_side_by_side<'a>(
     frame: &mut Frame,
     app: &App,
     content_area: Rect,
-    lines: Vec<Line<'a>>,
-    text_h: u16,
+    source_caption: Span<'a>,
+    state_caption: Line<'a>,
+    right_lines: Vec<Line<'a>>,
+    right_h: u16,
 ) {
     let art_w = ((content_area.width.saturating_sub(NOW_PLAYING_GAP)) * 2 / 5)
         .min(NOW_PLAYING_MAX_ART_WIDTH);
     let text_w = content_area.width.saturating_sub(art_w + NOW_PLAYING_GAP);
-    // Small top/bottom margin so the cover never touches the section's edges.
-    let art_budget = content_area.height.saturating_sub(2);
+    // Reserve the caption rows (source above, state below) plus a 1-row gap
+    // on each side of the cover, so the whole card gets a vertical budget.
+    let art_budget = content_area.height.saturating_sub(4);
     let art_h = if art_w == 0 || art_budget == 0 {
         0
     } else {
         square_art_height(app, art_w, art_budget)
     };
+    let left_h = art_h + 4; // source + gap + art + gap + state
 
     // Both columns center on the same row of `content_area` — that's what
-    // keeps the cover and the text block visually aligned regardless of
-    // how tall either one ends up being.
+    // keeps the artwork card and the text block visually aligned regardless
+    // of how tall either one ends up being.
     let center_y = content_area.y + content_area.height / 2;
-    let art_y = center_y.saturating_sub(art_h / 2).max(content_area.y);
-    let text_y = center_y.saturating_sub(text_h / 2).max(content_area.y);
+    let left_y = center_y.saturating_sub(left_h / 2).max(content_area.y);
+    let right_y = center_y.saturating_sub(right_h / 2).max(content_area.y);
 
+    let caption_area = |y: u16| Rect {
+        x: content_area.x,
+        y,
+        width: art_w,
+        height: 1,
+    };
+    frame.render_widget(
+        Paragraph::new(source_caption).alignment(Alignment::Center),
+        caption_area(left_y),
+    );
+
+    let art_y = left_y + 2;
     if art_h > 0 {
         let art_area = Rect {
             x: content_area.x,
@@ -202,13 +303,21 @@ fn draw_side_by_side<'a>(
         draw_artwork(frame, app, art_area);
     }
 
+    frame.render_widget(
+        Paragraph::new(state_caption).alignment(Alignment::Center),
+        caption_area(art_y + art_h + 1),
+    );
+
     let text_area = Rect {
         x: content_area.x + art_w + NOW_PLAYING_GAP,
-        y: text_y,
+        y: right_y,
         width: text_w,
-        height: content_area.height.saturating_sub(text_y - content_area.y),
+        height: content_area.height.saturating_sub(right_y - content_area.y),
     };
-    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Left), text_area);
+    frame.render_widget(
+        Paragraph::new(right_lines).alignment(Alignment::Left),
+        text_area,
+    );
 }
 
 /// Pre-side-by-side layout, kept for terminals too narrow to fit a legible

@@ -265,6 +265,41 @@ impl SoundCloudSource {
             .insert(url.to_string(), (audio_url.clone(), Instant::now()));
         Ok(audio_url)
     }
+
+    /// Fallback for waveform analysis when a track has no `waveform_url` of
+    /// its own to reuse: a low-bitrate stream, deliberately not the
+    /// playback-quality one from `get_audio_url`, so the fallback doesn't
+    /// roughly double the bandwidth of an already-streamed track. Mirrors
+    /// `YouTubeSource::get_waveform_audio_url`.
+    pub async fn get_waveform_audio_url(&self, url: &str) -> Result<String> {
+        let mut cmd = self.base_command();
+        cmd.args([
+            "--no-update",
+            "-f",
+            "worstaudio",
+            "--get-url",
+            "--no-playlist",
+            "--",
+            url,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+        let output = run_yt_dlp(&mut cmd, YT_DLP_TIMEOUT).await?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ClimusicError::Source(format!("yt-dlp failed: {stderr}")));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let audio_url = stdout.lines().next().unwrap_or("").trim().to_string();
+        if audio_url.is_empty() {
+            return Err(ClimusicError::Source(
+                "yt-dlp returned empty audio URL".into(),
+            ));
+        }
+        Ok(audio_url)
+    }
 }
 
 fn id_to_string(value: &Value) -> Option<String> {
@@ -307,6 +342,16 @@ fn parse_entry(entry: &Value) -> Option<UnifiedTrack> {
         .and_then(|v| v.as_f64())
         .map(|d| (d * 1000.0) as u64);
     let thumbnail = best_thumbnail(entry);
+    // SoundCloud publishes its own precomputed waveform per track — if
+    // yt-dlp passes this field through, waveform generation can use it
+    // directly instead of decoding audio itself. Not every entry shape is
+    // guaranteed to carry it (e.g. flat-playlist listings may not), so this
+    // is treated as a bonus, not a requirement — `None` here just means the
+    // waveform fetch falls back to decoding.
+    let waveform_url = entry
+        .get("waveform_url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     Some(UnifiedTrack {
         id: id.to_string(),
@@ -317,6 +362,7 @@ fn parse_entry(entry: &Value) -> Option<UnifiedTrack> {
         source: TrackSource::SoundCloud,
         playable_url: url,
         thumbnail_url: thumbnail,
+        waveform_url,
     })
 }
 

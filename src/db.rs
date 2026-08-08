@@ -304,6 +304,7 @@ impl Database {
                 source,
                 playable_url,
                 thumbnail_url: None,
+                waveform_url: None,
             }))
         })?;
         let mut tracks = Vec::new();
@@ -393,6 +394,7 @@ impl Database {
                 source,
                 playable_url,
                 thumbnail_url: row.get(6)?,
+                waveform_url: None,
             })
         })?;
         let mut tracks = Vec::new();
@@ -540,6 +542,7 @@ mod tests {
             source: TrackSource::SoundCloud,
             playable_url: "https://soundcloud.com/artist/track".to_string(),
             thumbnail_url: Some("https://img/small.jpg".to_string()),
+            waveform_url: None,
         };
 
         db.save_track(&track).unwrap();

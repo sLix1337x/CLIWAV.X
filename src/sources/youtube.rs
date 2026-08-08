@@ -171,6 +171,48 @@ impl YouTubeSource {
             .insert(cache_key, (audio_url.clone(), Instant::now()));
         Ok(audio_url)
     }
+
+    /// Get a direct URL for a low-bitrate audio-only stream, used only for
+    /// background waveform analysis — deliberately not the playback-quality
+    /// stream from `get_audio_url`, so generating a waveform doesn't roughly
+    /// double the bandwidth cost of an already-streamed track. Not cached:
+    /// the caller (`App::maybe_fetch_waveform`) already dedupes by track for
+    /// the session, so this only ever runs once per track anyway.
+    pub async fn get_waveform_audio_url(&self, video_id_or_url: &str) -> Result<String> {
+        let url = if video_id_or_url.starts_with("http") {
+            video_id_or_url.to_string()
+        } else {
+            format!("https://www.youtube.com/watch?v={}", video_id_or_url)
+        };
+
+        let mut cmd = self.base_command();
+        cmd.args([
+            "--no-update",
+            "-f",
+            "worstaudio",
+            "--get-url",
+            "--no-playlist",
+            "--",
+            &url,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+        let output = run_yt_dlp(&mut cmd, YT_DLP_TIMEOUT).await?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ClimusicError::Source(format!("yt-dlp failed: {stderr}")));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let audio_url = stdout.lines().next().unwrap_or("").trim().to_string();
+        if audio_url.is_empty() {
+            return Err(ClimusicError::Source(
+                "yt-dlp returned empty audio URL".into(),
+            ));
+        }
+        Ok(audio_url)
+    }
 }
 
 fn parse_entry(entry: &Value) -> Option<UnifiedTrack> {
@@ -203,5 +245,6 @@ fn parse_entry(entry: &Value) -> Option<UnifiedTrack> {
         source: TrackSource::YouTube,
         playable_url: format!("https://www.youtube.com/watch?v={}", id),
         thumbnail_url: thumbnail,
+        waveform_url: None,
     })
 }

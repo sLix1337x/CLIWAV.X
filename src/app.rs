@@ -313,6 +313,16 @@ pub struct App {
     artwork_key: Option<String>,
     artwork_handle: Option<tokio::task::JoinHandle<Option<image::DynamicImage>>>,
 
+    /// Bucketed, normalized amplitude data for the current track's Now
+    /// Playing waveform. `None` while unloaded/uncached/unsupported — the UI
+    /// falls back to the plain progress bar in that case.
+    pub waveform: Option<Vec<f32>>,
+    waveform_key: Option<String>,
+    waveform_handle: Option<tokio::task::JoinHandle<Option<Vec<f32>>>>,
+    /// Session-lifetime cache keyed the same way as `waveform_key`, so
+    /// replaying a track doesn't re-fetch/re-decode it.
+    waveform_cache: HashMap<String, Vec<f32>>,
+
     scan_handle: Option<tokio::task::JoinHandle<Result<()>>>,
 }
 
@@ -431,6 +441,10 @@ impl App {
             artwork_accent: None,
             artwork_key: None,
             artwork_handle: None,
+            waveform: None,
+            waveform_key: None,
+            waveform_handle: None,
+            waveform_cache: HashMap::new(),
             scan_handle: Some(scan_handle),
         };
 
@@ -1049,6 +1063,7 @@ impl App {
         self.autoplay_failed = false;
         self.status_message = format!("Playing: {} - {}", track.artist, track.title);
         self.maybe_fetch_artwork();
+        self.maybe_fetch_waveform();
 
         if clear_queue {
             self.queue.clear();
@@ -1903,6 +1918,121 @@ impl App {
             *self.artwork_cache.borrow_mut() = None;
         }
     }
+
+    /// Kick off a background waveform analysis for the current track, if it
+    /// isn't already cached/loading. Mirrors `maybe_fetch_artwork`'s shape —
+    /// see its comment for why the key is `"{source}:{id}"` rather than a
+    /// URL. Unlike artwork, a successful result is also kept in
+    /// `waveform_cache` for the rest of the session: waveform analysis is
+    /// far more expensive to redo (a full decode, or a network fetch) than
+    /// re-downloading a thumbnail.
+    fn maybe_fetch_waveform(&mut self) {
+        let Some(track) = self.current_track.clone() else {
+            self.waveform_key = None;
+            self.waveform = None;
+            self.waveform_handle = None;
+            return;
+        };
+
+        let key = format!("{}:{}", track.source.as_str(), track.id);
+        if Some(&key) == self.waveform_key.as_ref() {
+            return;
+        }
+        self.waveform_key = Some(key.clone());
+        self.waveform_handle = None;
+
+        if let Some(cached) = self.waveform_cache.get(&key) {
+            self.waveform = Some(cached.clone());
+            return;
+        }
+        self.waveform = None;
+
+        // Spotify tracks are resolved through YouTube (or a local match)
+        // only at play time, and that resolution isn't kept on the track —
+        // re-deriving it here just for a waveform isn't worth another
+        // search round-trip. Falls back to the plain progress bar.
+        if matches!(track.source, TrackSource::Spotify) {
+            return;
+        }
+
+        let yt_dlp_path = self.config.player.yt_dlp_path.clone();
+        let cookies = self.config.player.cookies_from_browser.clone();
+        let source = track.source;
+        let playable_url = track.playable_url.clone();
+        let waveform_url = track.waveform_url.clone();
+
+        self.waveform_handle = Some(tokio::task::spawn(async move {
+            match source {
+                TrackSource::Local => {
+                    tokio::task::spawn_blocking(move || crate::audio::waveform_from_file(&playable_url))
+                        .await
+                        .ok()
+                        .flatten()
+                }
+                TrackSource::SoundCloud => {
+                    // Prefer SoundCloud's own precomputed waveform (a few KB,
+                    // no audio re-download) when yt-dlp exposed one; fall
+                    // back to a low-bitrate decode otherwise.
+                    if let Some(wurl) = &waveform_url
+                        && let Some(w) = fetch_precomputed_waveform(wurl).await
+                    {
+                        return Some(w);
+                    }
+                    let sc = SoundCloudSource::new(&yt_dlp_path, &cookies);
+                    let audio_url = sc.get_waveform_audio_url(&playable_url).await.ok()?;
+                    let bytes = crate::sources::http_client(std::time::Duration::from_secs(30))
+                        .get(&audio_url)
+                        .send()
+                        .await
+                        .ok()?
+                        .bytes()
+                        .await
+                        .ok()?
+                        .to_vec();
+                    tokio::task::spawn_blocking(move || crate::audio::waveform_from_bytes(bytes, None))
+                        .await
+                        .ok()
+                        .flatten()
+                }
+                TrackSource::YouTube => {
+                    let yt = YouTubeSource::new(&yt_dlp_path, &cookies);
+                    let audio_url = yt.get_waveform_audio_url(&playable_url).await.ok()?;
+                    let bytes = crate::sources::http_client(std::time::Duration::from_secs(30))
+                        .get(&audio_url)
+                        .send()
+                        .await
+                        .ok()?
+                        .bytes()
+                        .await
+                        .ok()?
+                        .to_vec();
+                    tokio::task::spawn_blocking(move || crate::audio::waveform_from_bytes(bytes, None))
+                        .await
+                        .ok()
+                        .flatten()
+                }
+                TrackSource::Spotify => None,
+            }
+        }));
+    }
+
+    /// Poll the background waveform fetch; a successful result is cached for
+    /// the rest of the session under the same key `maybe_fetch_waveform` used.
+    pub fn poll_waveform(&mut self) {
+        let Some(handle) = &self.waveform_handle else {
+            return;
+        };
+        if !handle.is_finished() {
+            return;
+        }
+        let handle = self.waveform_handle.take().unwrap();
+        if let Ok(Some(waveform)) = handle.now_or_never().unwrap_or(Ok(None)) {
+            if let Some(key) = &self.waveform_key {
+                self.waveform_cache.insert(key.clone(), waveform.clone());
+            }
+            self.waveform = Some(waveform);
+        }
+    }
 }
 
 /// A vibrant, mid-brightness swatch from the artwork's color palette, used to
@@ -1923,6 +2053,21 @@ fn extract_accent(image: &image::DynamicImage) -> Option<(u8, u8, u8)> {
             spread * 2 + brightness_score
         })
         .map(|c| (c.r, c.g, c.b))
+}
+
+/// Fetches and parses a source's own precomputed waveform (currently: a
+/// SoundCloud `waveform_url`). `None` on any failure — the caller falls
+/// back to decoding audio itself.
+async fn fetch_precomputed_waveform(url: &str) -> Option<Vec<f32>> {
+    let bytes = crate::sources::http_client(std::time::Duration::from_secs(15))
+        .get(url)
+        .send()
+        .await
+        .ok()?
+        .bytes()
+        .await
+        .ok()?;
+    crate::audio::waveform_from_amplitude_json(&bytes)
 }
 
 /// The background half of search — runs entirely off the event loop.

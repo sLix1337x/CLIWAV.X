@@ -76,6 +76,11 @@ ratatui-image = "8.0.0"
 image = "0.25.10"
 color-thief = "0.2"
 
+# Audio decoding for waveform generation (Now Playing timeline). Playback
+# itself still goes through mpv — this is only for a one-shot background
+# amplitude analysis per track.
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "ogg", "vorbis", "flac", "wav"] }
+
 # Job-object binding so mpv can't outlive an abruptly-killed cliwavx.exe
 # (e.g. a closed terminal tab) as an orphaned, still-playing process.
 [target.'cfg(windows)'.dependencies]

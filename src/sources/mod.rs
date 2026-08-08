@@ -128,6 +128,13 @@ pub struct UnifiedTrack {
     pub playable_url: String,
     /// Optional thumbnail/cover URL.
     pub thumbnail_url: Option<String>,
+    /// Precomputed waveform data URL from the source, if it publishes one
+    /// (currently only SoundCloud) — lets waveform generation use the
+    /// source's own amplitude data instead of decoding audio ourselves.
+    /// `#[serde(default)]` so a queue saved before this field existed still
+    /// deserializes.
+    #[serde(default)]
+    pub waveform_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

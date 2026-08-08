@@ -26,6 +26,7 @@ impl LocalTrack {
             source: super::TrackSource::Local,
             playable_url: self.path.clone(),
             thumbnail_url: None,
+            waveform_url: None,
         }
     }
 }
