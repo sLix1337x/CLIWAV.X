@@ -7,6 +7,19 @@ function Test-Command($cmd) {
     return [bool](Get-Command $cmd -ErrorAction SilentlyContinue)
 }
 
+# "wavx" is a hard link to cliwavx.exe, not a second compiled/downloaded
+# copy: same file on disk under a second name, so `wavx` works as a shorter
+# command with no extra space or download. Falls back to a plain copy if
+# hard links aren't available for some reason (e.g. a non-NTFS install dir).
+function New-WavxAlias($target, $linkPath) {
+    if (Test-Path $linkPath) { Remove-Item $linkPath -Force }
+    try {
+        New-Item -ItemType HardLink -Path $linkPath -Value $target -ErrorAction Stop | Out-Null
+    } catch {
+        Copy-Item -Path $target -Destination $linkPath -Force
+    }
+}
+
 function Test-Winget() {
     return Test-Command winget
 }
@@ -73,8 +86,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "cargo build --release failed"
 }
 
-Copy-Item (Join-Path $PSScriptRoot "target\release\cliwavx.exe") (Join-Path $installDir "cliwavx.exe") -Force
-Copy-Item (Join-Path $PSScriptRoot "target\release\wavx.exe") (Join-Path $installDir "wavx.exe") -Force
+$exe = Join-Path $installDir "cliwavx.exe"
+Copy-Item (Join-Path $PSScriptRoot "target\release\cliwavx.exe") $exe -Force
+New-WavxAlias $exe (Join-Path $installDir "wavx.exe")
 
 # --- PATH ---
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

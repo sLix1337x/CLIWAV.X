@@ -3,14 +3,24 @@ $ErrorActionPreference = "Stop"
 
 $repoOwner = "sLix1337x"
 $repoName  = "CLIWAV.X"
-# Two identical binaries under different names, so both "cliwavx" and the
-# shorter "wavx" work as commands.
-$assetNames = @("cliwavx.exe", "wavx.exe")
+$assetName = "cliwavx.exe"
 
 $installDir = Join-Path $env:LOCALAPPDATA "CLIWAV.X"
 
 function Test-Command($cmd) {
     return [bool](Get-Command $cmd -ErrorAction SilentlyContinue)
+}
+
+# "wavx" is a hard link to cliwavx.exe, not a second download: same file on
+# disk under a second name, so `wavx` works as a shorter command for free.
+# Falls back to a plain copy if hard links aren't available for some reason.
+function New-WavxAlias($target, $linkPath) {
+    if (Test-Path $linkPath) { Remove-Item $linkPath -Force }
+    try {
+        New-Item -ItemType HardLink -Path $linkPath -Value $target -ErrorAction Stop | Out-Null
+    } catch {
+        Copy-Item -Path $target -Destination $linkPath -Force
+    }
 }
 
 function Test-Winget() {
@@ -72,24 +82,24 @@ if (-not (Test-Command yt-dlp)) {
     Write-Host "yt-dlp is already installed." -ForegroundColor Green
 }
 
-# --- CLIWAV.X binaries ---
-foreach ($assetName in $assetNames) {
-    $downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/latest/$assetName"
-    $tempFile = Join-Path $env:TEMP $assetName
+# --- CLIWAV.X binary ---
+$downloadUrl = "https://github.com/$repoOwner/$repoName/releases/download/latest/$assetName"
+$tempFile = Join-Path $env:TEMP $assetName
 
-    Write-Host "Downloading $assetName from GitHub Releases..." -ForegroundColor Cyan
-    try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
-    } catch {
-        Write-Host "Failed to download $assetName." -ForegroundColor Red
-        Write-Host "Make sure you are connected to the internet and the latest release exists at:"
-        Write-Host "https://github.com/$repoOwner/$repoName/releases/latest" -ForegroundColor Yellow
-        throw
-    }
-
-    Copy-Item -Path $tempFile -Destination (Join-Path $installDir $assetName) -Force
-    Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
+Write-Host "Downloading $assetName from GitHub Releases..." -ForegroundColor Cyan
+try {
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
+} catch {
+    Write-Host "Failed to download the release binary." -ForegroundColor Red
+    Write-Host "Make sure you are connected to the internet and the latest release exists at:"
+    Write-Host "https://github.com/$repoOwner/$repoName/releases/latest" -ForegroundColor Yellow
+    throw
 }
+
+$exe = Join-Path $installDir $assetName
+Copy-Item -Path $tempFile -Destination $exe -Force
+Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
+New-WavxAlias $exe (Join-Path $installDir "wavx.exe")
 
 # --- PATH ---
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

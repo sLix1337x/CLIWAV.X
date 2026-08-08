@@ -17,14 +17,12 @@ strip = true
 # Display name of the player is "CLIWAV.X" (UI title, mpv/audio-session
 # name). Cargo/rustc don't allow '.' in a target name, so the binary target
 # is the dotless form (the library crate stays "climusic").
+#
+# Only one binary is built: "wavx" is provided as a hard link to this same
+# file (created by the installers, not a second Cargo target) rather than a
+# second compiled copy — same behavior, no extra download or disk space.
 [[bin]]
 name = "cliwavx"
-path = "src/main.rs"
-
-# Short alias for the same binary — `wavx` launches identically to
-# `cliwavx`, just less to type. Both compile from the same main.rs.
-[[bin]]
-name = "wavx"
 path = "src/main.rs"
 
 [dependencies]

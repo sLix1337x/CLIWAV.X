@@ -32,4 +32,3 @@ jobs:
           title: Latest
           files: |
             target/release/cliwavx.exe
-            target/release/wavx.exe
