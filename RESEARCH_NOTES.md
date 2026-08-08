@@ -10,7 +10,60 @@ libraries (bubbletea and lipgloss, both Go) were also read for architectural
 and styling ideas — not for audio-specific code, just general TUI design
 patterns, described here in our own words for our own Rust/ratatui codebase.
 
-## 1. Ten-band EQ
+## 1. Ten-band EQ — IMPLEMENTED (see `src/player/eq.rs`, `src/ui/eq.rs`)
+
+**Original recommendation (below, kept for context) turned out half right.**
+Driving mpv's own filter chain over IPC instead of writing our own DSP was
+correct — mpv (via ffmpeg's `libavfilter`) already ships a proper, tested
+peaking-biquad `equalizer` filter. But the *mechanism* for runtime updates
+was wrong, and the `anequalizer` multi-band filter turned out not to be the
+right building block either. Both were corrected by empirical testing
+against a live mpv v0.41 instance (a throwaway PowerShell IPC client,
+scripted mpv with `--input-ipc-server`) before writing any real code:
+
+- **`af-command` (incremental per-band updates) does not work reliably.**
+  Tested against three different, well-documented runtime-commandable
+  ffmpeg filters — `volume`'s own `volume` command, `equalizer`'s `gain`/
+  `frequency` commands, and `anequalizer`'s `change` command — all
+  consistently returned `"error running command"`, regardless of `target`
+  (`all` vs. the exact inner filter instance name via `filtername@label`
+  syntax inside the graph string). Root cause unconfirmed (possibly a
+  regression in this mpv build, possibly an `avfilter_graph_send_command`
+  quirk where target="all" iterates every filter in the graph — including
+  auto-inserted format/resample filters that don't support commands — and
+  returns the *last* filter's `ENOSYS`, masking a real success). Either way:
+  don't build on `af-command` without re-verifying against whatever mpv
+  version ships.
+- **`anequalizer` (one filter, many bands via `c0f=...c0w=...c0g=...|...`)
+  failed outright once real audio was actually loaded and playing** (it had
+  accepted the same syntax fine while mpv was idle with no file, which is a
+  trap — always test against a *playing* instance, not just an idle one).
+  Likely a channel-layout/syntax mismatch specific to that filter, not
+  investigated further once the working alternative below was found.
+- **What does work reliably: `af set` (a full filter-chain replace, not
+  `af add` + `af-command` deltas) with 10 comma-chained `equalizer` filter
+  instances in one `lavfi` graph string** — e.g.
+  `@cliwavx_eq:lavfi=[equalizer=f=70:width_type=q:w=1.4:g=6,equalizer=f=180:...]`.
+  Confirmed working for both the initial add and repeated replaces (preset
+  switch, single-band nudge) against a live, playing mpv instance.
+- **Real cost, not just theoretical**: one `af set` replace triggered an
+  observed `playback-restart` event (i.e. a genuine, small audible blip),
+  confirming the concern flagged in the original recommendation below. The
+  shipped implementation debounces band/preset edits (200ms before sending
+  to mpv, 800ms before writing `config.toml`) rather than sending one `af
+  set` per keystroke.
+
+Implementation ended up close to the original suggested design (10 bands as
+`{freq, gain_db}`, ±12 dB range, built-in presets as a plain Rust array,
+"Custom" indicator, debounced persistence, a dedicated tab) — just built on
+`af set` full-replace instead of `af-command` deltas, and 10 chained
+`equalizer` instances instead of one `anequalizer`. Band frequencies used are
+the classic doubling-octave 10-band spacing (31 Hz–16 kHz), not the spacing
+in the original recommendation below (kept for historical accuracy, not
+followed as-is).
+
+<details>
+<summary>Original recommendation (written before empirical mpv testing — see correction above)</summary>
 
 **Recommendation: drive mpv's own filter chain over IPC. Don't write our own
 DSP.** Unlike a player that decodes audio itself in-process, we don't own the
@@ -65,6 +118,8 @@ than assuming the syntax above is exactly right.
   keybindings help overlay) showing 10 vertical sliders/bars with the
   current gain, current preset name (or "Custom"), navigable with existing
   vim-style keys.
+
+</details>
 
 ## 2. Visualizer
 
@@ -222,11 +277,7 @@ right fix is small ratatui-native helpers like `fn split_header_body(area) ->
 
 ## 5. Suggested priority
 
-1. **EQ first** — smaller, self-contained, and the mechanism (drive mpv's
-   existing filter support over IPC) is already well understood; the main
-   remaining unknown is the exact `af-command` argument syntax, which needs
-   one quick empirical check against a live mpv process before writing the
-   real implementation.
+1. ~~**EQ first**~~ — **done**, see section 1 above.
 2. **Visualizer second** — bigger lift (new native dependency, a capture
    thread, an FFT pipeline), but the waveform feature already gave us the
    Unicode block-rendering building block, and 20–30 Hz analysis + eased
