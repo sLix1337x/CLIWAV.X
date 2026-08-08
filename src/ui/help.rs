@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 const BINDINGS: &[(&str, &str)] = &[
-    ("1  2  3  4  5  6", "Jump to Dashboard / Search / Queue / Library / SoundCloud / Now Playing"),
+    ("1  2  3  4  5  6", "Jump to Dashboard / Now Playing / Library / Queue / SoundCloud / Search"),
     ("Tab / Shift+Tab", "Switch tabs (Dashboard: toggle pane; Search: toggle typing/browsing; Library & SoundCloud: toggle pane)"),
     ("Up/Down, k/j", "Navigate list"),
     ("Left/Right (Dashboard)", "Switch Search / Tracks / Likes / Reposts / Library"),

@@ -82,7 +82,7 @@ cliwavx -q "lofi hip hop"
 | Key | Action |
 |-----|--------|
 | `Tab` / `Shift+Tab` | Switch tabs. Dashboard: toggle pane. Search: toggle typing vs. browsing results. Library/SoundCloud: toggle pane. |
-| `1` `2` `3` `4` `5` `6` | Jump to Dashboard / Search / Queue / Library / SoundCloud / Now Playing |
+| `1` `2` `3` `4` `5` `6` | Jump to Dashboard / Now Playing / Library / Queue / SoundCloud / Search |
 | `↑` `↓` / `k` `j` | Navigate list |
 | `←` `→` (Dashboard) | Switch Search / Tracks / Likes / Reposts / Library, reloads categories as you land on them |
 | `Enter` (Search, typing) | Run search, then switch focus to the results list |

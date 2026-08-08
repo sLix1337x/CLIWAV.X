@@ -208,38 +208,40 @@ async fn handle_key(key: event::KeyEvent, app: &mut App) -> Result<bool> {
             Tab::SoundCloud => app.toggle_soundcloud_pane(),
             _ => {
                 app.current_tab = match app.current_tab {
-                    Tab::Dashboard => Tab::Search,
-                    Tab::Search => Tab::Queue,
-                    Tab::Queue => Tab::Library,
-                    Tab::Library => Tab::SoundCloud,
-                    Tab::SoundCloud => Tab::NowPlaying,
-                    Tab::NowPlaying => Tab::Dashboard,
+                    Tab::Dashboard => Tab::NowPlaying,
+                    Tab::NowPlaying => Tab::Library,
+                    Tab::Library => Tab::Queue,
+                    Tab::Queue => Tab::SoundCloud,
+                    Tab::SoundCloud => Tab::Search,
+                    Tab::Search => Tab::Dashboard,
                 };
             }
         },
         KeyCode::BackTab => {
             app.current_tab = match app.current_tab {
-                Tab::Dashboard => Tab::NowPlaying,
-                Tab::Search => Tab::Dashboard,
-                Tab::Queue => Tab::Search,
-                Tab::Library => Tab::Queue,
-                Tab::SoundCloud => Tab::Library,
-                Tab::NowPlaying => Tab::SoundCloud,
+                Tab::Dashboard => Tab::Search,
+                Tab::NowPlaying => Tab::Dashboard,
+                Tab::Library => Tab::NowPlaying,
+                Tab::Queue => Tab::Library,
+                Tab::SoundCloud => Tab::Queue,
+                Tab::Search => Tab::SoundCloud,
             };
             if matches!(app.current_tab, Tab::Search) {
                 app.search_focus = SearchFocus::Input;
             }
         }
 
+        // Jump order matches the tab bar: Dashboard, Now Playing, Library,
+        // Queue, SoundCloud, Search.
         KeyCode::Char('1') => app.current_tab = Tab::Dashboard,
-        KeyCode::Char('2') => {
+        KeyCode::Char('2') => app.current_tab = Tab::NowPlaying,
+        KeyCode::Char('3') => app.current_tab = Tab::Library,
+        KeyCode::Char('4') => app.current_tab = Tab::Queue,
+        KeyCode::Char('5') => app.current_tab = Tab::SoundCloud,
+        KeyCode::Char('6') => {
             app.current_tab = Tab::Search;
             app.search_focus = SearchFocus::Input;
         }
-        KeyCode::Char('3') => app.current_tab = Tab::Queue,
-        KeyCode::Char('4') => app.current_tab = Tab::Library,
-        KeyCode::Char('5') => app.current_tab = Tab::SoundCloud,
-        KeyCode::Char('6') => app.current_tab = Tab::NowPlaying,
 
         KeyCode::Down | KeyCode::Char('j') => app.select_next(),
         KeyCode::Up | KeyCode::Char('k') => app.select_previous(),

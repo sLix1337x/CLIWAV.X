@@ -68,7 +68,7 @@ fn draw_divider(frame: &mut Frame, area: Rect) {
 }
 
 fn draw_tabs(frame: &mut Frame, app: &App, area: Rect) {
-    let titles: Vec<Line> = ["Dashboard", "Search", "Queue", "Library", "SoundCloud", "Now Playing"]
+    let titles: Vec<Line> = ["Dashboard", "Now Playing", "Library", "Queue", "SoundCloud", "Search"]
         .iter()
         .map(|t| Line::from(Span::raw(format!(" {t} "))))
         .collect();
@@ -371,11 +371,11 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
 fn current_tab_index(tab: &Tab) -> usize {
     match tab {
         Tab::Dashboard => 0,
-        Tab::Search => 1,
-        Tab::Queue => 2,
-        Tab::Library => 3,
+        Tab::NowPlaying => 1,
+        Tab::Library => 2,
+        Tab::Queue => 3,
         Tab::SoundCloud => 4,
-        Tab::NowPlaying => 5,
+        Tab::Search => 5,
     }
 }
 
