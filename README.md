@@ -51,6 +51,19 @@ If `winget` is unavailable, yt-dlp is downloaded as a portable executable into t
 
 After installation, **restart your terminal** (or run `refreshenv` if you have Chocolatey) so PATH changes are picked up. Then you can run `cliwavx` from any folder.
 
+### Updating
+
+Run the same one-liner again:
+
+```powershell
+irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex
+```
+
+Every push to `master` rebuilds `cliwavx.exe` and republishes it to the
+`latest` GitHub release, so re-running the installer always fetches the
+newest build and overwrites the one in `%LOCALAPPDATA%\CLIWAV.X`. It skips
+mpv/yt-dlp if they're already installed.
+
 ### Build from source
 
 If you have the [Rust toolchain](https://rustup.rs/) installed, you can also build and install locally:
