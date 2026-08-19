@@ -1,0 +1,237 @@
+use anyhow::{Context, Result};
+use directories::ProjectDirs;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+
+fn default_local_paths() -> Vec<String> {
+    vec!["~/Music".to_string()]
+}
+
+fn default_mpv_path() -> String {
+    "mpv".to_string()
+}
+
+fn default_yt_dlp_path() -> String {
+    "yt-dlp".to_string()
+}
+
+fn default_volume() -> u8 {
+    80
+}
+
+fn default_eq_gains() -> Vec<f64> {
+    vec![0.0; 10]
+}
+
+fn default_eq_preset() -> String {
+    "Flat".to_string()
+}
+
+// Every section and field carries a serde default so a partial or
+// hand-edited config.toml (e.g. from an older version, or with a section
+// deleted) loads with sensible defaults instead of refusing to start.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default)]
+    pub local: LocalConfig,
+    #[serde(default)]
+    pub spotify: SpotifyConfig,
+    #[serde(default)]
+    pub soundcloud: SoundCloudConfig,
+    #[serde(default)]
+    pub player: PlayerConfig,
+    #[serde(default)]
+    pub eq: EqConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalConfig {
+    #[serde(default = "default_local_paths")]
+    pub paths: Vec<String>,
+}
+
+impl Default for LocalConfig {
+    fn default() -> Self {
+        Self {
+            paths: default_local_paths(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SpotifyConfig {
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub client_secret: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SoundCloudConfig {
+    #[serde(default)]
+    pub username: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlayerConfig {
+    #[serde(default = "default_mpv_path")]
+    pub mpv_path: String,
+    #[serde(default = "default_yt_dlp_path")]
+    pub yt_dlp_path: String,
+    #[serde(default = "default_volume")]
+    pub volume: u8,
+    /// Optional browser name passed to yt-dlp as `--cookies-from-browser`
+    /// (e.g. "firefox", "chrome") — reuses the logged-in browser session so
+    /// private Likes and subscriber/region-gated tracks resolve. Empty = off.
+    #[serde(default)]
+    pub cookies_from_browser: String,
+    /// Run mpv's WASAPI output in exclusive mode, bypassing the Windows
+    /// audio mixer so local lossless files play bit-perfect at their native
+    /// sample rate instead of being resampled to the mixer's shared format.
+    /// Off by default: exclusive mode takes over the audio device, muting
+    /// every other app's sound while a track plays, and can click briefly
+    /// on track/device changes.
+    #[serde(default)]
+    pub audio_exclusive: bool,
+}
+
+/// 10-band EQ state, persisted so it survives a restart. `gains` is a `Vec`
+/// (not a fixed-size array) purely so a malformed/older config.toml — wrong
+/// length, or missing entirely — falls back to flat instead of failing to
+/// parse; `App` converts it to `eq::Gains` on load and clamps/pads as needed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EqConfig {
+    #[serde(default = "default_eq_gains")]
+    pub gains: Vec<f64>,
+    /// Name of the matching built-in preset, or "Custom" after a manual
+    /// band edit that no longer matches any preset exactly.
+    #[serde(default = "default_eq_preset")]
+    pub preset: String,
+}
+
+impl Default for EqConfig {
+    fn default() -> Self {
+        Self {
+            gains: default_eq_gains(),
+            preset: default_eq_preset(),
+        }
+    }
+}
+
+impl Default for PlayerConfig {
+    fn default() -> Self {
+        Self {
+            mpv_path: default_mpv_path(),
+            yt_dlp_path: default_yt_dlp_path(),
+            volume: default_volume(),
+            cookies_from_browser: String::new(),
+            audio_exclusive: false,
+        }
+    }
+}
+
+impl Config {
+    pub fn load() -> Result<Self> {
+        let path = Self::config_path()?;
+        if !path.exists() {
+            let default = Self::default();
+            default.save()?;
+            return Ok(default);
+        }
+        let content = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read config at {}", path.display()))?;
+        let config: Config = toml::from_str(&content)
+            .with_context(|| format!("failed to parse config at {}", path.display()))?;
+        Ok(config)
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let path = Self::config_path()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        // toml::to_string_pretty emits no comments, so prepend the guidance a
+        // fresh file needs (note: saving rewrites the file, so hand-added
+        // comments elsewhere in it don't survive).
+        let content = format!(
+            "# CLIWAV.X configuration\n\
+             # mpv_path / yt_dlp_path may be full paths (e.g. a wrapper script).\n\
+             # local.paths supports '~'. Get Spotify credentials at\n\
+             # https://developer.spotify.com/dashboard\n\n{}",
+            toml::to_string_pretty(self)?
+        );
+        fs::write(&path, content)
+            .with_context(|| format!("failed to write config at {}", path.display()))?;
+        Ok(())
+    }
+
+    pub fn config_path() -> Result<PathBuf> {
+        let dirs = ProjectDirs::from("com", "climusic", "climusic")
+            .context("could not determine project directories")?;
+        Ok(dirs.config_dir().join("config.toml"))
+    }
+
+    pub fn db_path() -> Result<PathBuf> {
+        let dirs = ProjectDirs::from("com", "climusic", "climusic")
+            .context("could not determine project directories")?;
+        let data_dir = dirs.data_dir();
+        fs::create_dir_all(data_dir)?;
+        Ok(data_dir.join("library.db"))
+    }
+
+    pub fn cache_dir() -> Result<PathBuf> {
+        let dirs = ProjectDirs::from("com", "climusic", "climusic")
+            .context("could not determine project directories")?;
+        let cache_dir = dirs.cache_dir();
+        fs::create_dir_all(cache_dir)?;
+        Ok(cache_dir.to_path_buf())
+    }
+
+    pub fn queue_path() -> Result<PathBuf> {
+        let dirs = ProjectDirs::from("com", "climusic", "climusic")
+            .context("could not determine project directories")?;
+        let data_dir = dirs.data_dir();
+        fs::create_dir_all(data_dir)?;
+        Ok(data_dir.join("queue.json"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A config.toml missing whole sections (older versions, hand edits)
+    /// must load with defaults instead of failing to start the app.
+    #[test]
+    fn partial_config_loads_with_defaults() {
+        let cfg: Config = toml::from_str("[soundcloud]\nusername = \"someone\"\n").unwrap();
+        assert_eq!(cfg.soundcloud.username, "someone");
+        assert_eq!(cfg.local.paths, vec!["~/Music".to_string()]);
+        assert!(cfg.spotify.client_id.is_empty());
+        assert!(cfg.spotify.client_secret.is_empty());
+        assert_eq!(cfg.player.mpv_path, "mpv");
+        assert_eq!(cfg.player.yt_dlp_path, "yt-dlp");
+        assert_eq!(cfg.player.volume, 80);
+        assert!(!cfg.player.audio_exclusive);
+        assert_eq!(cfg.eq.gains, vec![0.0; 10]);
+        assert_eq!(cfg.eq.preset, "Flat");
+    }
+
+    /// An `[eq]` section with only a preset name (e.g. hand-edited) still
+    /// fills in flat gains rather than failing to parse.
+    #[test]
+    fn partial_eq_section_fills_missing_gains() {
+        let cfg: Config = toml::from_str("[eq]\npreset = \"Bass Boost\"\n").unwrap();
+        assert_eq!(cfg.eq.preset, "Bass Boost");
+        assert_eq!(cfg.eq.gains, vec![0.0; 10]);
+    }
+
+    /// A section present but with keys missing fills just those keys.
+    #[test]
+    fn partial_section_fills_missing_keys() {
+        let cfg: Config = toml::from_str("[player]\nvolume = 42\n").unwrap();
+        assert_eq!(cfg.player.volume, 42);
+        assert_eq!(cfg.player.mpv_path, "mpv");
+    }
+}

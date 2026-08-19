@@ -1,0 +1,103 @@
+[package]
+name = "climusic"
+version = "0.1.0"
+edition = "2024"
+authors = ["sLix1337x"]
+description = "Low-overhead CLI music player for local files, YouTube, SoundCloud, and Spotify discovery"
+license = "MIT"
+repository = "https://github.com/sLix1337x/CLIWAV.X"
+# Default binary for bare `cargo run` (the executable name cannot contain '.').
+default-run = "cliwavx"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+# Display name of the player is "CLIWAV.X" (UI title, mpv/audio-session
+# name). Cargo/rustc don't allow '.' in a target name, so the binary target
+# is the dotless form (the library crate stays "climusic").
+#
+# Only one binary is built: "wavx" is provided as a hard link to this same
+# file (created by the installers, not a second Cargo target) rather than a
+# second compiled copy — same behavior, no extra download or disk space.
+[[bin]]
+name = "cliwavx"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+futures = "0.3"
+
+# TUI
+crossterm = "0.28"
+ratatui = "0.29"
+
+# Serialization / config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Local audio metadata
+lofty = "0.22"
+
+# HTTP client for Spotify API
+reqwest = { version = "0.12", features = ["json"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# System directories
+directories = "5.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI args
+clap = { version = "4.5", features = ["derive"] }
+
+# Unicode width for TUI
+unicode-width = "0.2"
+
+# Directory scanning
+walkdir = "2.5"
+
+# Spotify token encoding
+base64 = "0.22"
+
+# Home directory expansion
+dirs = "5.0"
+
+# Shuffle playback order
+rand = "0.8"
+ratatui-image = "8.0.0"
+image = "0.25.10"
+color-thief = "0.2"
+
+# Audio decoding for waveform generation (Now Playing timeline). Playback
+# itself still goes through mpv — this is only for a one-shot background
+# amplitude analysis per track.
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "ogg", "vorbis", "flac", "wav"] }
+
+# Job-object binding so mpv can't outlive an abruptly-killed cliwavx.exe
+# (e.g. a closed terminal tab) as an orphaned, still-playing process. Also
+# where the visualizer's WASAPI loopback capture + FFT deps live, since both
+# are Windows-only (playback goes through mpv as a separate process, so we
+# can't tap its samples directly — capturing system audio output ourselves
+# is the only way to get real PCM for a spectrum visualizer).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Console",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+wasapi = "0.23"
+rustfft = "6.4"
