@@ -85,12 +85,18 @@ color-thief = "0.2"
 # amplitude analysis per track.
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "ogg", "vorbis", "flac", "wav"] }
 
+# The visualizer's FFT. Platform-independent even though only Windows can
+# currently feed it: `audio::spectrum` is compiled everywhere because `App`
+# holds a `Spectrum` and the UI reads its `BAND_COUNT` unconditionally. Only
+# the *capture* half (`audio::capture`, wasapi below) is Windows-gated.
+rustfft = "6.4"
+
 # Job-object binding so mpv can't outlive an abruptly-killed cliwavx.exe
-# (e.g. a closed terminal tab) as an orphaned, still-playing process. Also
-# where the visualizer's WASAPI loopback capture + FFT deps live, since both
-# are Windows-only (playback goes through mpv as a separate process, so we
-# can't tap its samples directly — capturing system audio output ourselves
-# is the only way to get real PCM for a spectrum visualizer).
+# (e.g. a closed terminal tab) as an orphaned, still-playing process — Unix
+# needs no equivalent, see `player::mpv::MpvPlayer::start`. Also where the
+# visualizer's WASAPI loopback capture lives: mpv plays in its own process,
+# so capturing system audio output ourselves is the only way to get real PCM
+# for a spectrum, and that mechanism is Windows-only.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
@@ -100,4 +106,3 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Threading",
 ] }
 wasapi = "0.23"
-rustfft = "6.4"

@@ -99,6 +99,13 @@ impl MpvPlayer {
         // kill-on-close job object makes Windows tear it down as soon as
         // our own process handle closes, by any means (normal exit, panic,
         // or the terminal force-killing us).
+        //
+        // Deliberately Windows-only rather than unimplemented elsewhere:
+        // Unix already has this. mpv is spawned into our process group, so
+        // closing the terminal delivers SIGHUP to the whole group and mpv
+        // exits with us — the very behaviour job objects exist to emulate.
+        // Graceful exits are covered on both platforms by `main` calling
+        // `player.stop()` before it restores the terminal.
         #[cfg(windows)]
         job::kill_with_current_process(&child);
 

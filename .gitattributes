@@ -1,0 +1,14 @@
+# Line endings are normalised to LF in the repository by default.
+* text=auto
+
+# The macOS installer is piped straight into bash. A CRLF copy fails there
+# with confusing errors ("\r: command not found"), and this repo is developed
+# on Windows where core.autocrlf would otherwise hand it CRLF — so pin it.
+*.sh text eol=lf
+
+# PowerShell is checked out CRLF to match the platform it runs on.
+*.ps1 text eol=crlf
+
+# Never line-ending-normalise binary assets.
+*.png binary
+*.jpg binary

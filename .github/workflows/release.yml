@@ -1,4 +1,4 @@
-name: Build and release Windows binary
+name: Build and release binaries
 
 on:
   push:
@@ -6,10 +6,29 @@ on:
       - master
 
 jobs:
-  release:
-    runs-on: windows-latest
-    permissions:
-      contents: write
+  # Each platform builds and tests itself, then hands its binary over as an
+  # artifact. Nothing publishes from here: the release is recreated on every
+  # run, so parallel jobs attaching assets directly would delete each
+  # other's. Publishing happens once, in the job below.
+  build:
+    strategy:
+      # One platform failing shouldn't discard the others' binaries — the
+      # publish job still gets whatever succeeded, and the failure is
+      # visible on its own.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: cliwavx.exe
+            built: target/release/cliwavx.exe
+          - os: macos-latest      # Apple Silicon
+            asset: cliwavx-macos-arm64
+            built: target/release/cliwavx
+          - os: macos-13          # last Intel runner
+            asset: cliwavx-macos-x86_64
+            built: target/release/cliwavx
+
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -17,18 +36,46 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release binary
-        run: cargo build --release
+      - name: Cache cargo registry and build output
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
 
       - name: Run tests
         run: cargo test
 
-      - name: Upload release asset
-        uses: marvinpinto/action-automatic-releases@v1.2.1
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Stage binary under its release name
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.built }}" "dist/${{ matrix.asset }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          automatic_release_tag: latest
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download every platform's binary
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Attach them all to the "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest
           prerelease: false
-          title: Latest
-          files: |
-            target/release/cliwavx.exe
+          files: dist/*
