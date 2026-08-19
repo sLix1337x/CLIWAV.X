@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CLIWAV.X — Music, inside your terminal</title>
-  <meta name="description" content="A low-overhead, keyboard-driven CLI music player for Windows 11. Play local files, YouTube, SoundCloud, and Spotify discovery from a single Rust TUI.">
+  <meta name="description" content="A low-overhead, keyboard-driven CLI music player for Windows and macOS. Play local files, YouTube, SoundCloud, and Spotify discovery from a single Rust TUI.">
   <meta property="og:title" content="CLIWAV.X — Music, inside your terminal">
-  <meta property="og:description" content="Low overhead. Pure sound. CLI control. A dashboard-first terminal music player for Windows 11.">
+  <meta property="og:description" content="Low overhead. Pure sound. CLI control. A dashboard-first terminal music player for Windows and macOS.">
   <meta property="og:image" content="https://raw.githubusercontent.com/sLix1337x/CLIWAV.X/master/CLIWAVEX-LOGO.png">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
@@ -221,6 +221,34 @@
     }
 
     /* Install command */
+    .os-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin: 0 auto 12px;
+    }
+    .os-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-faint);
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .os-tab svg { width: 15px; height: 15px; }
+    .os-tab:hover { color: var(--text); border-color: var(--border-hover); }
+    .os-tab.is-active {
+      color: var(--accent-soft);
+      border-color: var(--accent-line);
+      background: var(--accent-dim);
+    }
     .install-box {
       max-width: 660px;
       margin: 0 auto 24px;
@@ -609,13 +637,24 @@
   <header class="hero" id="install">
     <div class="container">
       <p class="eyebrow">Low overhead &middot; Pure sound &middot; CLI control</p>
-      <div class="hero-badge"><span></span>Built in Rust for Windows 11</div>
+      <div class="hero-badge"><span></span>Built in Rust for Windows &amp; macOS</div>
       <h1>Music, inside your<br><span class="gradient-text">terminal.</span></h1>
       <p class="lead">A dashboard-first CLI music player. Stream local files, YouTube, SoundCloud, and Spotify discovery without ever leaving the keyboard.</p>
 
+      <div class="os-tabs" role="tablist" aria-label="Choose your platform">
+        <button class="os-tab is-active" id="os-tab-windows" role="tab" aria-selected="true" aria-controls="install-command" onclick="selectOs('windows')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10 4.5v7H3v-6ZM11 4.3 21 3v8.5H11v-7.2ZM3 12.5h7v7L3 18.5v-6ZM11 12.5h10V21l-10-1.3v-7.2Z"/></svg>
+          Windows
+        </button>
+        <button class="os-tab" id="os-tab-macos" role="tab" aria-selected="false" aria-controls="install-command" onclick="selectOs('macos')">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.8c0-2.2 1.8-3.3 1.9-3.3-1-1.5-2.6-1.7-3.2-1.7-1.4-.1-2.7.8-3.3.8-.7 0-1.7-.8-2.8-.8-1.5 0-2.8.8-3.6 2.1-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.6 2.2 2.7 2.2 1.1 0 1.5-.7 2.8-.7 1.3 0 1.6.7 2.8.7 1.2 0 1.9-1 2.6-2.1.8-1.2 1.2-2.4 1.2-2.4s-2.2-.9-2.2-3.4ZM14.2 6.3c.6-.7 1-1.7.9-2.7-.9 0-2 .6-2.6 1.3-.6.6-1.1 1.7-.9 2.6 1 .1 2-.5 2.6-1.2Z"/></svg>
+          macOS
+        </button>
+      </div>
+
       <div class="install-box">
         <div class="install-body">
-          <span class="prompt">PS&gt;</span>
+          <span class="prompt" id="install-prompt">PS&gt;</span>
           <code id="install-command">irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex</code>
           <button class="copy-btn" id="copy-btn" onclick="copyInstall()">Copy</button>
         </div>
@@ -635,7 +674,7 @@
       <div class="stats-row">
         <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2Z"/><path d="M14 2v6h6"/></svg>MIT License</span>
         <span class="divider"></span>
-        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Windows 11</span>
+        <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Windows &amp; macOS</span>
         <span class="divider"></span>
         <span class="stat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>Written in Rust</span>
         <span class="divider"></span>
@@ -788,7 +827,7 @@
             <img src="https://raw.githubusercontent.com/sLix1337x/CLIWAV.X/master/CLIWAVEX-LOGO.png" alt="CLIWAV.X logo">
             CLIWAV.X
           </a>
-          <p>A low-overhead, keyboard-driven CLI music player for Windows 11. Built with Rust, mpv, and yt-dlp.</p>
+          <p>A low-overhead, keyboard-driven CLI music player for Windows and macOS. Built with Rust, mpv, and yt-dlp.</p>
         </div>
         <div class="footer-cols">
           <div class="footer-col">
@@ -803,7 +842,8 @@
             <h5>Resources</h5>
             <ul>
               <li><a href="https://github.com/sLix1337x/CLIWAV.X#readme" target="_blank" rel="noopener">Documentation</a></li>
-              <li><a href="https://github.com/sLix1337x/CLIWAV.X/blob/master/docs/install.ps1" target="_blank" rel="noopener">Install script</a></li>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X/blob/master/docs/install.ps1" target="_blank" rel="noopener">Install script (Windows)</a></li>
+              <li><a href="https://github.com/sLix1337x/CLIWAV.X/blob/master/docs/install.sh" target="_blank" rel="noopener">Install script (macOS)</a></li>
             </ul>
           </div>
           <div class="footer-col">
@@ -824,6 +864,33 @@
   </footer>
 
   <script>
+    const INSTALLERS = {
+      windows: { prompt: 'PS>', command: 'irm https://sLix1337x.github.io/CLIWAV.X/install.ps1 | iex' },
+      macos:   { prompt: '$',   command: 'curl -fsSL https://sLix1337x.github.io/CLIWAV.X/install.sh | bash' },
+    };
+
+    function selectOs(os) {
+      const choice = INSTALLERS[os];
+      if (!choice) return;
+      document.getElementById('install-prompt').textContent = choice.prompt;
+      document.getElementById('install-command').textContent = choice.command;
+      for (const key of Object.keys(INSTALLERS)) {
+        const tab = document.getElementById('os-tab-' + key);
+        const active = key === os;
+        tab.classList.toggle('is-active', active);
+        tab.setAttribute('aria-selected', String(active));
+      }
+    }
+
+    // Preselect the visitor's platform so the common case needs no click.
+    // Only ever changes which tab starts open — both stay one click away, so
+    // a wrong guess costs nothing.
+    (function preselectOs() {
+      const ua = navigator.userAgent;
+      // Exclude iOS: it matches "Mac" on iPad but has no installer here.
+      if (/Mac/i.test(ua) && !/iPhone|iPad|iPod/i.test(ua)) selectOs('macos');
+    })();
+
     function copyInstall() {
       const command = document.getElementById('install-command').innerText;
       const btn = document.getElementById('copy-btn');
