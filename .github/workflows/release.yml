@@ -21,11 +21,13 @@ jobs:
           - os: windows-latest
             asset: cliwavx.exe
             built: target/release/cliwavx.exe
-          - os: macos-latest      # Apple Silicon
+          # Apple Silicon only. Intel Macs are deliberately not shipped: the
+          # macos-13 runners queue for a long time and hold up every release,
+          # and Rosetta does not help here — it translates x86_64 to arm64,
+          # not the reverse, so an Intel Mac needs its own build. Intel users
+          # are pointed at building from source by docs/install.sh.
+          - os: macos-latest
             asset: cliwavx-macos-arm64
-            built: target/release/cliwavx
-          - os: macos-13          # last Intel runner
-            asset: cliwavx-macos-x86_64
             built: target/release/cliwavx
 
     runs-on: ${{ matrix.os }}

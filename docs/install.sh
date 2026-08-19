@@ -28,9 +28,24 @@ has() { command -v "$1" >/dev/null 2>&1; }
 [ "$(uname -s)" = "Darwin" ] || fail "This installer is for macOS. On Windows use install.ps1."
 
 case "$(uname -m)" in
-    arm64)  ASSET="cliwavx-macos-arm64" ;;
-    x86_64) ASSET="cliwavx-macos-x86_64" ;;
-    *)      fail "Unsupported architecture: $(uname -m)" ;;
+    arm64)
+        ASSET="cliwavx-macos-arm64"
+        ;;
+    x86_64)
+        # No prebuilt Intel binary, and the arm64 one is not a substitute:
+        # Rosetta translates x86_64 to arm64, not the other way round. Say so
+        # instead of 404ing on an asset that was never published.
+        warn "No prebuilt binary is published for Intel Macs."
+        warn "Build it from source instead — it is the same program:"
+        warn "  brew install rust mpv yt-dlp"
+        warn "  git clone https://github.com/${REPO}.git && cd CLIWAV.X"
+        warn "  cargo build --release"
+        warn "  cp target/release/cliwavx ~/.local/bin/"
+        exit 1
+        ;;
+    *)
+        fail "Unsupported architecture: $(uname -m)"
+        ;;
 esac
 
 info "Installing CLIWAV.X and its dependencies..."
