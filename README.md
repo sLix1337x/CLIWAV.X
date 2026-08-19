@@ -55,7 +55,8 @@ cliwavx      # or: wavx
 
 ## Configuration
 
-Written on first run to `%APPDATA%\climusic\...\config.toml` on Windows,
+Written on first run to `config.toml` —
+`%APPDATA%\climusic\climusic\config\` on Windows,
 `~/Library/Application Support/com.climusic.climusic/` on macOS. Local
 folders, Spotify credentials and a SoundCloud username can all be set from
 inside the app — press `S` or `C`.

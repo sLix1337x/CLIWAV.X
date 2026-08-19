@@ -5,7 +5,9 @@
 //! IPC — we never see mpv's raw PCM, only playback-control properties. mpv
 //! also doesn't expose a clean "give me the current spectrum" property, and
 //! empirically its `af`/filter-command surface isn't reliable enough to lean
-//! on for that either (see `RESEARCH_NOTES.md`). Capturing the system's
+//! on for that either — `af-command` returned "error running command" for
+//! every runtime-commandable filter tested against a live mpv v0.41, so the
+//! EQ drives full-chain `af set` replacements instead. Capturing the system's
 //! audio *output* independently — via WASAPI's loopback mode, which mirrors
 //! whatever a render device is currently playing — sidesteps mpv entirely:
 //! it captures whatever is actually coming out of the speakers, regardless
