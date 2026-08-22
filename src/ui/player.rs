@@ -10,7 +10,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 use ratatui::Frame;
-use ratatui_image::{Image, Resize};
+use ratatui_image::{FilterType, Image, Resize};
 
 pub fn format_db(db: f64) -> String {
     if db.is_infinite() {
@@ -466,7 +466,17 @@ fn render_cover(frame: &mut Frame, app: &App, img: &DynamicImage, area: Rect) {
     let mut cache = app.artwork_cache.borrow_mut();
     let needs_encode = cache.as_ref().map(|(a, _)| *a != area).unwrap_or(true);
     if needs_encode {
-        match app.picker.new_protocol(img.clone(), area, Resize::Fit(None)) {
+        // `Resize::Fit(None)` means nearest-neighbour, which is the worst
+        // possible choice here: covers arrive at 500-640px square and land in
+        // a box tens of pixels across, so nearest throws away all but one
+        // source pixel per target pixel and turns fine detail -- text on the
+        // sleeve, gradients, face features -- into harsh aliased blocks. It
+        // is most obvious on the halfblocks fallback, where there are only
+        // two pixels of vertical resolution per row to begin with, but it
+        // degrades Sixel and Kitty output just as much. Lanczos3 actually
+        // samples the neighbourhood it is averaging away. The cost is paid
+        // once per resize, not per frame -- see the cache above.
+        match app.picker.new_protocol(img.clone(), area, Resize::Fit(Some(FilterType::Lanczos3))) {
             Ok(protocol) => *cache = Some((area, protocol)),
             Err(_) => return,
         }
