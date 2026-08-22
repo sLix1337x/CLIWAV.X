@@ -14,11 +14,21 @@ function Test-Command($cmd) {
 
 # Pull the machine + user PATH back out of the registry into this session, so a
 # dependency installed a few lines ago is actually findable by Test-Command
-# instead of only after the user restarts their terminal.
+# instead of only after the user restarts their terminal. Merge rather than
+# overwrite: assigning the registry PATH straight onto $env:Path would drop the
+# process-only entries this script never put there -- an activated virtualenv, an
+# nvm shim, anything the caller's shell added -- for the rest of their session,
+# which matters because this runs through `irm ... | iex` in a terminal they are
+# still using afterwards.
 function Update-SessionPath() {
-    $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $user    = [Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path = ($machine, $user | Where-Object { $_ }) -join ';'
+    $registry = @(
+        [Environment]::GetEnvironmentVariable("Path", "Machine"),
+        [Environment]::GetEnvironmentVariable("Path", "User")
+    ) | Where-Object { $_ } | ForEach-Object { $_ -split ';' } | Where-Object { $_ }
+
+    $session = @($env:Path -split ';' | Where-Object { $_ })
+    $missing = @($registry | Where-Object { $session -notcontains $_ } | Select-Object -Unique)
+    if ($missing.Count -gt 0) { $env:Path = (($session + $missing) -join ';') }
 }
 
 function Add-ToUserPath($dir) {
@@ -61,7 +71,16 @@ function Install-WingetPackage($packageId, $packageName) {
         "--disable-interactivity"
     )
     & winget @wingetArgs
-    if ($LASTEXITCODE -ne 0) {
+    # winget exits non-zero when the package is already there, so a plain
+    # -ne 0 check sends a re-run down the portable-download fallback and
+    # redownloads a dependency the machine already has. These three all mean
+    # "it is installed", which is the only thing this script needs to be true.
+    $alreadyPresent = @(
+        0x8A150061,  # APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED
+        0x8A15010D,  # APPINSTALLER_CLI_ERROR_INSTALL_ALREADY_INSTALLED
+        0x8A15002B   # APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE
+    )
+    if ($LASTEXITCODE -ne 0 -and $alreadyPresent -notcontains $LASTEXITCODE) {
         throw "winget install of $packageName failed (exit $LASTEXITCODE)."
     }
 }
@@ -186,10 +205,20 @@ try {
     throw
 }
 
+# Windows keeps a running .exe locked, so upgrading over a player that is still
+# open fails here rather than at some confusing later point. Say which program to
+# close instead of surfacing a raw access-denied trace.
 $exe = Join-Path $installDir $assetName
-Copy-Item -Path $tempFile -Destination $exe -Force
-Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
-New-WavxAlias $exe (Join-Path $installDir "wavx.exe")
+try {
+    Copy-Item -Path $tempFile -Destination $exe -Force
+    New-WavxAlias $exe (Join-Path $installDir "wavx.exe")
+} catch {
+    Write-Host "Could not write $assetName to $installDir." -ForegroundColor Red
+    Write-Host "If CLIWAV.X is running, close it and run this installer again." -ForegroundColor Yellow
+    throw
+} finally {
+    Remove-Item -Path $tempFile -Force -ErrorAction SilentlyContinue
+}
 
 # --- PATH ---
 Add-ToUserPath $installDir
